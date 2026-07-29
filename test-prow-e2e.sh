@@ -36,27 +36,82 @@ fi
 # --- Deploy plugin ---
 oc new-project "${PLUGIN_NAMESPACE}" || oc project "${PLUGIN_NAMESPACE}"
 
-helm install "${PLUGIN_NAME}" charts/openshift-console-plugin \
-  -n "${PLUGIN_NAMESPACE}" \
-  --set "plugin.image=${PLUGIN_PULL_SPEC}" \
-  --set "plugin.name=${PLUGIN_NAME}"
+oc apply -n "${PLUGIN_NAMESPACE}" -f - <<EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${PLUGIN_NAME}
+  annotations:
+    service.alpha.openshift.io/serving-cert-secret-name: ${PLUGIN_NAME}-cert
+spec:
+  selector:
+    app: ${PLUGIN_NAME}
+  ports:
+  - port: 9443
+    targetPort: 9443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${PLUGIN_NAME}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${PLUGIN_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${PLUGIN_NAME}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: plugin
+        image: ${PLUGIN_PULL_SPEC}
+        args: ["--https-port=9443"]
+        ports:
+        - containerPort: 9443
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+        volumeMounts:
+        - name: cert
+          mountPath: /var/cert
+          readOnly: true
+      volumes:
+      - name: cert
+        secret:
+          secretName: ${PLUGIN_NAME}-cert
+---
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: ${PLUGIN_NAME}
+spec:
+  displayName: ${PLUGIN_NAME}
+  backend:
+    type: Service
+    service:
+      name: ${PLUGIN_NAME}
+      namespace: ${PLUGIN_NAMESPACE}
+      port: 9443
+      basePath: /
+  proxy:
+  - alias: backend
+    endpoint:
+      type: Service
+      service:
+        name: ${PLUGIN_NAME}
+        namespace: ${PLUGIN_NAMESPACE}
+        port: 9443
+EOF
 
 echo "Waiting for plugin deployment rollout..."
 oc rollout status deployment/"${PLUGIN_NAME}" -n "${PLUGIN_NAMESPACE}" --timeout=300s
-
-echo "Waiting for ConsolePlugin CR..."
-for i in $(seq 1 60); do
-  if oc get consoleplugins "${PLUGIN_NAME}" &>/dev/null; then
-    echo "ConsolePlugin CR found."
-    break
-  fi
-  if [ "$i" -eq 60 ]; then
-    echo "Error: ConsolePlugin CR did not appear within 120s."
-    oc get all -n "${PLUGIN_NAMESPACE}"
-    exit 1
-  fi
-  sleep 2
-done
 
 echo "Enabling plugin on the console..."
 oc patch consoles.operator.openshift.io cluster \
