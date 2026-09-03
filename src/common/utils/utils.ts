@@ -72,6 +72,16 @@ export function isSystemNamespace(namespace: string): boolean {
   return SYSTEM_NAMESPACE_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
+export function isNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const record = err as Record<string, unknown>;
+  if (record.code === 404 || record.status === 404 || record.reason === 'NotFound') {
+    return true;
+  }
+  const response = record.response as Record<string, unknown> | undefined;
+  return response?.status === 404;
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'object' && err !== null && 'message' in err) {

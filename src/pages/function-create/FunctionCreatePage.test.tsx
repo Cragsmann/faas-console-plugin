@@ -54,6 +54,8 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
     consoleFetchJSON,
     consoleFetch,
     useK8sWatchResource: vi.fn().mockReturnValue([[], true, null]),
+    // Admin => the namespace field is a free-text input.
+    useAccessReview: () => [true, false],
   };
 });
 
@@ -140,6 +142,26 @@ describe('FunctionCreatePage', () => {
     await waitFor(() => {
       expect(screen.getByText(/Backend error/)).toBeInTheDocument();
     });
+  });
+
+  it('surfaces an error and does not navigate when submit fails with a 404', async () => {
+    const user = userEvent.setup();
+
+    server.use(
+      http.post(`${BACKEND_API}/api/v1/func/create`, () =>
+        HttpResponse.json({ message: 'namespace not found' }, { status: 404 }),
+      ),
+    );
+
+    renderPage();
+
+    await fillForm(user);
+    await user.click(screen.getByRole('button', { name: /Create/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Error creating function')).toBeInTheDocument();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('renders UserAvatar in header', () => {

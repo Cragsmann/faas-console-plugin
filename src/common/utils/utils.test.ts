@@ -1,4 +1,4 @@
-import { getLanguageFromPath, isSystemNamespace, parseFuncYaml } from './utils';
+import { getLanguageFromPath, isNotFoundError, isSystemNamespace, parseFuncYaml } from './utils';
 
 describe('getLanguageFromPath', () => {
   it.each([
@@ -37,6 +37,38 @@ describe('isSystemNamespace', () => {
     ['   ', false],
   ])('returns %s -> %s', (namespace, expected) => {
     expect(isSystemNamespace(namespace)).toBe(expected);
+  });
+});
+
+describe('isNotFoundError', () => {
+  it('detects a k8s Status object with code 404', () => {
+    expect(isNotFoundError({ code: 404, reason: 'NotFound', message: 'x' })).toBe(true);
+  });
+
+  it('detects a k8s Status object with reason NotFound', () => {
+    expect(isNotFoundError({ reason: 'NotFound' })).toBe(true);
+  });
+
+  it('detects an Error with a status of 404', () => {
+    const err = Object.assign(new Error('namespaces "x" not found'), { status: 404 });
+    expect(isNotFoundError(err)).toBe(true);
+  });
+
+  it('detects a wrapped HTTP error with response.status 404', () => {
+    expect(isNotFoundError({ response: { status: 404 } })).toBe(true);
+  });
+
+  it('returns false for a conflict', () => {
+    expect(isNotFoundError({ code: 409, reason: 'AlreadyExists' })).toBe(false);
+  });
+
+  it('returns false for a plain error', () => {
+    expect(isNotFoundError(new Error('boom'))).toBe(false);
+  });
+
+  it('returns false for null and undefined', () => {
+    expect(isNotFoundError(null)).toBe(false);
+    expect(isNotFoundError(undefined)).toBe(false);
   });
 });
 

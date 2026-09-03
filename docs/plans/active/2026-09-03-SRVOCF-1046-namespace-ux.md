@@ -27,22 +27,25 @@
 
 - Inline `Alert variant="warning"` inside the Namespace `FormGroup` when `isSystemNamespace(namespace)`. Does not block. i18n string extracted.
 
-### Task 3: Non-existent namespace handling (SRVOCF-1076)
+### Task 3: Non-existent namespace handling (SRVOCF-1076) (DONE)
 
-- Surface a "namespace does not exist" signal from `useClusterService` (expose the existing per-namespace watch not-found error as a boolean, e.g. `namespaceExists`/`namespaceMissing`, rather than swallowing it).
-- Pass it to the form and show an inline message near the Namespace field when the (non-empty, existing-checked) namespace is missing.
-- Map the submit-time k8s 404 to a friendly "Namespace \"X\" does not exist." message instead of the raw `http code: 404 ...`. Add a small helper (unit-tested) to detect the not-found k8s error shape.
-- TDD: helper tests first, then form/hook behavior tests.
+- `isNotFoundError` helper in `src/common/utils/utils.ts`, unit-tested. Detects k8s 404/NotFound across `{code:404}`, `{reason:'NotFound'}`, `Error` with `status:404`, and `{response:{status:404}}`.
+- `useClusterService` now returns a `namespaceMissing` boolean (true when a namespace is set and the Secret/ConfigMap watch returns a not-found error). Not-found watch errors are no longer surfaced via the generic `error`.
+- `CreateFunctionForm` takes a `namespaceMissing` prop and shows an inline warning ("Namespace \"X\" does not exist.") near the Namespace field when the field is non-empty. Does not block Create.
+- `FunctionCreatePage` threads `namespaceMissing` through and maps a submit-time k8s 404 to the same friendly message instead of the raw `http code: 404 ...`.
+- i18n string extracted. All tests pass (226).
 
-### Task 4: Role-aware namespace field (SRVOCF-1046)
+### Task 4: Role-aware namespace field (SRVOCF-1046) (DONE)
 
-- Add a hook (e.g. `useNamespaceOptions`) that returns `{ role, namespaces, loading }` using `useAccessReview` (can create namespaces => admin) and `useK8sWatchResource` on `Project`.
-- Render by role in `CreateFunctionForm`:
-  - Admin: free-text `TextInput` + validation + system-ns warning + non-existent warning (from Task 3).
-  - Developer, exactly one namespace: prefill and lock the field (read-only), fire `onNamespaceChange` with that value.
+- New `NamespaceField` component in `src/pages/function-create/components/NamespaceField.tsx` owns the role-aware rendering plus the system-ns and does-not-exist warnings. It uses an inline `useNamespaceOptions` hook that returns `{ role, namespaces, loading }` from `useAccessReview` (can create namespaces => admin) and `useK8sWatchResource` on `project.openshift.io/v1 Project`.
+- Rendering by role:
+  - Admin: free-text `TextInput` + system-ns warning + does-not-exist warning (from Task 3).
+  - Developer, exactly one namespace: prefilled, disabled input; auto-fires `onChange` with that namespace.
   - Developer, more than one: `FormSelect` of accessible namespaces (placeholder "Select...").
-  - Developer, zero namespaces: inline message to contact an administrator.
-- TDD: component tests per role branch (mock the access-review / project hooks at the SDK boundary, per TESTING.md).
+  - Developer, zero namespaces: inline info Alert to contact an administrator.
+  - While loading: a `Skeleton` placeholder, no control.
+- `CreateFunctionForm` now renders `<NamespaceField>` instead of the inline namespace FormGroup; `setField('namespace', ...)` (registry update + env-var reset + `onNamespaceChange`) still runs via the `onChange` callback.
+- Tests: `NamespaceField.test.tsx` covers every role branch and loading (SDK hooks mocked at the boundary). Existing form/page tests mock `useAccessReview` as admin so free-text behavior is unchanged. i18n strings extracted. All tests pass (237).
 
 ## Acceptance criteria (from Jira)
 
