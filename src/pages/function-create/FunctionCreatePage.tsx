@@ -8,6 +8,7 @@ import { UserAvatar } from '../../common/components/UserAvatar';
 import { AuthContext, AuthProvider } from '../../common/context/AuthProvider';
 import { useCluster } from '../../common/clients/useCluster';
 import { createFunction } from '../../common/clients/functionsClient';
+import { NamespaceRole } from '../../common/clients/namespace';
 import { EnvVar, K8sKeyedResource, PlainEnvVar, ResourceEnvVar } from '../../common/types';
 import { errorMessage } from '../../common/utils/utils';
 
@@ -29,6 +30,9 @@ function FunctionCreatePageContent() {
     isConnectedToForge,
     secrets,
     configMaps,
+    role,
+    namespaces,
+    namespacesLoading,
     onNamespaceChange,
   } = useFunctionCreatePage();
 
@@ -61,6 +65,9 @@ function FunctionCreatePageContent() {
             onCancel={handleCancel}
             onNamespaceChange={onNamespaceChange}
             isSubmitting={isSubmitting}
+            role={role}
+            namespaces={namespaces}
+            namespacesLoading={namespacesLoading}
           />
         )}
       </PageSection>
@@ -74,6 +81,9 @@ function useFunctionCreatePage(): {
   isSubmitting: boolean;
   isConnectedToForge: boolean;
   error: string | null;
+  role: NamespaceRole;
+  namespaces: string[];
+  namespacesLoading: boolean;
   handleSubmit: (data: CreateFunctionFormData) => Promise<void>;
   handleCancel: () => void;
   onNamespaceChange: (namespace: string) => void;
@@ -82,7 +92,11 @@ function useFunctionCreatePage(): {
   const isConnectedToForge = useContext(AuthContext).isAuthenticated;
   const [namespace, setNamespace] = useState('');
   const debouncedNamespace = useDebouncedValue(namespace, 300);
-  const { secrets, configMaps } = useCluster([], debouncedNamespace);
+  const { secrets, configMaps, role, namespaces, namespacesLoading } = useCluster(
+    [],
+    debouncedNamespace,
+    { withNamespaceOptions: true },
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +137,9 @@ function useFunctionCreatePage(): {
     isConnectedToForge,
     secrets,
     configMaps,
+    role,
+    namespaces,
+    namespacesLoading,
     onNamespaceChange: setNamespace,
   };
 }

@@ -40,6 +40,7 @@
   "Language": "Language",
   "Leave": "Leave",
   "Loading": "Loading",
+  "Loading namespaces": "Loading namespaces",
   "Name": "Name",
   "Namespace": "Namespace",
   "No functions found": "No functions found",
@@ -73,5 +74,6 @@
   "URL": "URL",
   "Value": "Value",
   "View setup guide.": "View setup guide.",
+  "You do not have access to any namespaces. Contact an administrator to get access to a namespace for your functions.": "You do not have access to any namespaces. Contact an administrator to get access to a namespace for your functions.",
   "You have unsaved changes. Leave anyway?": "You have unsaved changes. Leave anyway?"
 }

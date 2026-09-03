@@ -1,9 +1,11 @@
 import {
   K8sResourceKind,
+  useAccessReview,
   useK8sWatchResource,
   WatchK8sResource,
 } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
+import { isNotFoundError } from '../utils/utils';
 import {
   ClusterFunction,
   FUNCTION_NAME_LABEL,
@@ -11,17 +13,76 @@ import {
   K8sKeyedResource,
   REVISION_LABEL,
 } from '../types';
+import { NamespaceRole, resolveNamespace } from './namespace';
+
+interface ClusterOptions {
+  // The namespace options (role, accessible namespaces) require an access review and a
+  // Project watch that only the create form needs, so they stay off by default.
+  withNamespaceOptions?: boolean;
+}
 
 export function useCluster(
   functionNames: string[] = [],
   namespace?: string,
+  options: ClusterOptions = {},
 ): {
   functions: ReadonlyMap<string, ClusterFunction>;
   secrets: K8sKeyedResource[];
   configMaps: K8sKeyedResource[];
   loaded: boolean;
   error: Error;
+  role: NamespaceRole;
+  namespaces: string[];
+  namespacesLoading: boolean;
 } {
+  const { withNamespaceOptions = false } = options;
+
+  // An empty group+resource with the third arg set makes the SDK skip the review, so a
+  // consumer that does not need namespace options never fires a SelfSubjectAccessReview.
+  const [canCreateNamespaces, accessLoading] = useAccessReview(
+    withNamespaceOptions ? { group: '', resource: 'namespaces', verb: 'create' } : {},
+    undefined,
+    true,
+  );
+
+  const projectConfig = useMemo(
+    () =>
+      withNamespaceOptions
+        ? {
+            groupVersionKind: { group: 'project.openshift.io', version: 'v1', kind: 'Project' },
+            isList: true,
+          }
+        : null,
+    [withNamespaceOptions],
+  );
+
+  const [projects, projectsLoaded] = useK8sWatchResource<K8sResourceKind[]>(projectConfig);
+
+  const namespaces = useMemo(
+    () =>
+      (projects ?? [])
+        .map((p) => p.metadata?.name)
+        .filter((name): name is string => Boolean(name))
+        .sort(),
+    [projects],
+  );
+
+  const namespacesLoading = withNamespaceOptions && (accessLoading || !projectsLoaded);
+
+  const role: NamespaceRole = canCreateNamespaces
+    ? 'admin'
+    : namespaces.length === 0
+      ? 'developer-none'
+      : namespaces.length === 1
+        ? 'developer-single'
+        : 'developer-multi';
+
+  // A single-namespace developer has no editable control, so watch their one namespace
+  // rather than the (empty) typed value.
+  const effectiveNamespace = withNamespaceOptions
+    ? resolveNamespace(role, namespaces, namespace ?? '')
+    : namespace;
+
   const knSvcConfig = useMemo(
     () => newKsvcWatchConfig(functionNames, namespace),
     [functionNames, namespace],
@@ -31,8 +92,11 @@ export function useCluster(
     [functionNames, namespace],
   );
 
-  const secretConfig = useMemo(() => newSecretConfig(namespace), [namespace]);
-  const configMapConfig = useMemo(() => newConfigMapConfig(namespace), [namespace]);
+  const secretConfig = useMemo(() => newSecretConfig(effectiveNamespace), [effectiveNamespace]);
+  const configMapConfig = useMemo(
+    () => newConfigMapConfig(effectiveNamespace),
+    [effectiveNamespace],
+  );
 
   const [knSvcs, knLoaded, knError] = useK8sWatchResource<K8sResourceKind[]>(knSvcConfig);
   const [deps, depLoaded, depError] = useK8sWatchResource<K8sResourceKind[]>(depConfig);
@@ -50,15 +114,24 @@ export function useCluster(
   const secrets = useMemo(() => toKeyedResources(rawSecrets), [rawSecrets]);
   const configMaps = useMemo(() => toKeyedResources(rawConfigMaps), [rawConfigMaps]);
 
-  let loaded = knLoaded && depLoaded;
-  if (namespace) loaded = loaded && secretLoaded && cmLoaded;
+  const loaded = knLoaded && depLoaded && (!effectiveNamespace || (secretLoaded && cmLoaded));
+
+  // A not-found watch error just means the namespace does not exist yet (an admin can type
+  // one that has not been created); swallow it so it is not surfaced as a scary error.
+  const namespaceScopedError =
+    (isNotFoundError(secretError) ? null : secretError) ||
+    (isNotFoundError(cmError) ? null : cmError) ||
+    null;
 
   return {
     functions,
     secrets,
     configMaps,
     loaded,
-    error: knError || depError || secretError || cmError,
+    error: knError || depError || namespaceScopedError,
+    role,
+    namespaces,
+    namespacesLoading,
   };
 }
 

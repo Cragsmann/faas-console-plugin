@@ -4,15 +4,18 @@ import {
   deploymentFixture,
   funcFixture,
   ksvcFixture,
+  projectFixture,
   reset,
   secretFixture,
   setWatchFixtures,
+  useAccessReviewStub,
   useK8sWatchResourceStub,
 } from '../testing/sdkTestDoubles';
 import { FUNCTION_NAME_LABEL } from '../types';
 import { useCluster } from './useCluster';
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  useAccessReview: useAccessReviewStub,
   useK8sWatchResource: useK8sWatchResourceStub,
 }));
 
@@ -101,6 +104,118 @@ describe('useCluster', () => {
       const { result } = renderHook(() => useCluster([funcName]));
 
       expect(result.current.error).toBeNull();
+    });
+  });
+
+  describe('namespace not-found handling', () => {
+    it('does not surface a not-found secret watch error as a generic error', () => {
+      setWatchFixtures({ secretError: { code: 404, reason: 'NotFound' } });
+
+      const { result } = renderHook(() => useCluster([], namespace));
+
+      expect(result.current.error).toBeNull();
+    });
+
+    it('does not surface a not-found configmap watch error as a generic error', () => {
+      setWatchFixtures({ cmError: { code: 404, reason: 'NotFound' } });
+
+      const { result } = renderHook(() => useCluster([], namespace));
+
+      expect(result.current.error).toBeNull();
+    });
+  });
+
+  describe('namespace options', () => {
+    it('reports admin when the user can create namespaces', () => {
+      setWatchFixtures({ canCreate: true });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.role).toBe('admin');
+    });
+
+    it('reports developer-none when the user has no namespaces', () => {
+      setWatchFixtures({ canCreate: false, projects: [] });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.role).toBe('developer-none');
+    });
+
+    it('reports developer-single with one accessible namespace', () => {
+      setWatchFixtures({ canCreate: false, projects: [projectFixture('team-a')] });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.role).toBe('developer-single');
+      expect(result.current.namespaces).toEqual(['team-a']);
+    });
+
+    it('reports developer-multi with several namespaces, sorted', () => {
+      setWatchFixtures({
+        canCreate: false,
+        projects: [projectFixture('team-b'), projectFixture('team-a')],
+      });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.role).toBe('developer-multi');
+      expect(result.current.namespaces).toEqual(['team-a', 'team-b']);
+    });
+
+    it('is loading while the access review is pending', () => {
+      setWatchFixtures({ accessLoading: true });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.namespacesLoading).toBe(true);
+    });
+
+    it('is loading while projects are pending', () => {
+      setWatchFixtures({ projectsLoaded: false });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.namespacesLoading).toBe(true);
+    });
+
+    it('watches the single developer namespace even when nothing is typed', () => {
+      setWatchFixtures({
+        canCreate: false,
+        projects: [projectFixture('team-a')],
+        secrets: [secretFixture('db-creds', { username: 'x' }, 'team-a')],
+      });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.secrets.map((s) => s.name)).toEqual(['db-creds']);
+    });
+
+    it('does not derive namespace options when they are not requested', () => {
+      setWatchFixtures({
+        canCreate: true,
+        projects: [projectFixture('team-a'), projectFixture('team-b')],
+      });
+
+      const { result } = renderHook(() => useCluster([funcName]));
+
+      expect(result.current.role).toBe('developer-none');
+      expect(result.current.namespaces).toEqual([]);
+      expect(result.current.namespacesLoading).toBe(false);
     });
   });
 
