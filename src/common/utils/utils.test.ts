@@ -1,4 +1,25 @@
-import { parseFuncYaml } from './utils';
+import { isSystemNamespace, parseFuncYaml } from './utils';
+
+describe('isSystemNamespace', () => {
+  it.each([
+    ['default', true],
+    ['openshift', true],
+    ['kube-system', true],
+    ['kube-public', true],
+    ['kube-node-lease', true],
+    ['openshift-monitoring', true],
+    ['openshift-image-registry', true],
+    ['kube-anything', true],
+    ['my-functions', false],
+    ['demo', false],
+    ['openshiftish', false],
+    ['kubeless', false],
+    ['', false],
+    ['   ', false],
+  ])('returns %s -> %s', (namespace, expected) => {
+    expect(isSystemNamespace(namespace)).toBe(expected);
+  });
+});
 
 describe('parseFuncYaml', () => {
   it('parses name, namespace, and runtime', () => {

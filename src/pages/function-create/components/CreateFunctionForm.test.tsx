@@ -461,6 +461,44 @@ describe('CreateFunctionForm', () => {
     expect(secretResourceSelect.value).toBe('');
   });
 
+  it('shows a system namespace warning when a system namespace is typed', async () => {
+    const user = userEvent.setup();
+
+    renderWithContext(<CreateFunctionForm {...defaultProps} />);
+
+    expect(screen.queryByText(/system namespace/i)).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: /Namespace/ }), 'openshift-monitoring');
+
+    expect(screen.getByText(/system namespace/i)).toBeInTheDocument();
+  });
+
+  it('does not show the system namespace warning for a normal namespace', async () => {
+    const user = userEvent.setup();
+
+    renderWithContext(<CreateFunctionForm {...defaultProps} />);
+
+    await user.type(screen.getByRole('textbox', { name: /Namespace/ }), 'my-functions');
+
+    expect(screen.queryByText(/system namespace/i)).not.toBeInTheDocument();
+  });
+
+  it('does not block Create when a system namespace is entered', async () => {
+    const user = userEvent.setup();
+
+    renderWithContext(<CreateFunctionForm {...defaultProps} />);
+
+    await user.type(screen.getByRole('textbox', { name: /Repository/ }), 'my-repo');
+    await user.type(screen.getByRole('textbox', { name: /Branch/ }), 'main');
+    await user.type(screen.getByRole('textbox', { name: /^Name$/ }), 'my-func');
+    await user.type(screen.getByRole('textbox', { name: /Namespace/ }), 'default');
+
+    expect(screen.getByText(/system namespace/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Create/ })).not.toBeDisabled();
+    });
+  });
+
   it('does not flag empty names as duplicates', async () => {
     const user = userEvent.setup();
 
