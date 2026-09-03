@@ -34,6 +34,7 @@
   "Follow these steps to create and deploy your serverless function.": "Follow these steps to create and deploy your serverless function.",
   "Function Settings": "Function Settings",
   "Functions": "Functions",
+  "Functions should not be deployed to a system namespace. Deployment there is likely to fail. Create a new namespace for your functions instead.": "Functions should not be deployed to a system namespace. Deployment there is likely to fail. Create a new namespace for your functions instead.",
   "GitHub Settings": "GitHub Settings",
   "Key": "Key",
   "Language": "Language",

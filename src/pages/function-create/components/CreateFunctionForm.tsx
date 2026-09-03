@@ -1,6 +1,7 @@
 import { useContext, useState } from 'react';
 import {
   ActionGroup,
+  Alert,
   Button,
   Flex,
   FlexItem,
@@ -30,6 +31,7 @@ import {
 } from '../../../common/types';
 import { AuthContext } from '../../../common/context/AuthProvider';
 import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
+import { isSystemNamespace } from '../../../common/utils/utils';
 
 const OCP_INTERNAL_REGISTRY = 'image-registry.openshift-image-registry.svc:5000/';
 
@@ -134,6 +136,16 @@ export function CreateFunctionForm({
             value={fields.namespace}
             onChange={(_, val) => setField('namespace', val)}
           />
+          {isSystemNamespace(fields.namespace) && (
+            <Alert
+              variant="warning"
+              isInline
+              title={t(
+                'Functions should not be deployed to a system namespace. Deployment there is likely to fail. Create a new namespace for your functions instead.',
+              )}
+              className="pf-v6-u-mt-sm"
+            />
+          )}
         </FormGroup>
       </FormSection>
       <EnvVarSection
