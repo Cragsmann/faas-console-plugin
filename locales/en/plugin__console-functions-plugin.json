@@ -43,6 +43,7 @@
   "Loading namespaces": "Loading namespaces",
   "Name": "Name",
   "Namespace": "Namespace",
+  "Namespace \"{{namespace}}\" does not exist.": "Namespace \"{{namespace}}\" does not exist.",
   "No functions found": "No functions found",
   "No namespaces available.": "No namespaces available.",
   "No source repository to edit": "No source repository to edit",

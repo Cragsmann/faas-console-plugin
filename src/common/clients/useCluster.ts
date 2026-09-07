@@ -33,6 +33,7 @@ export function useCluster(
   canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoading: boolean;
+  namespaceMissing: boolean;
 } {
   const { withNamespaceOptions = false } = options;
 
@@ -115,6 +116,13 @@ export function useCluster(
     (isNotFoundError(cmError) ? null : cmError) ||
     null;
 
+  // A not-found watch error on a set namespace means it does not exist yet; report it as a
+  // dedicated flag so the form can warn inline rather than surfacing a raw error.
+  const namespaceMissing =
+    withNamespaceOptions &&
+    !!effectiveNamespace &&
+    (isNotFoundError(secretError) || isNotFoundError(cmError));
+
   return {
     functions,
     secrets,
@@ -124,6 +132,7 @@ export function useCluster(
     canCreateNamespaces,
     namespaces,
     namespacesLoading,
+    namespaceMissing,
   };
 }
 

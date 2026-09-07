@@ -13,6 +13,7 @@ interface NamespaceFieldProps {
   canCreateNamespaces: boolean;
   namespaces: string[];
   loading: boolean;
+  namespaceMissing: boolean;
   value: string;
   onChange: (namespace: string) => void;
 }
@@ -21,6 +22,7 @@ export function NamespaceField({
   canCreateNamespaces,
   namespaces,
   loading,
+  namespaceMissing,
   value,
   onChange,
 }: NamespaceFieldProps) {
@@ -53,6 +55,14 @@ export function NamespaceField({
             title={t(
               'Functions should not be deployed to a system namespace. Deployment there is likely to fail. Create a new namespace for your functions instead.',
             )}
+            className="pf-v6-u-mt-sm"
+          />
+        )}
+        {namespaceMissing && (
+          <Alert
+            variant="warning"
+            isInline
+            title={t('Namespace "{{namespace}}" does not exist.', { namespace: value })}
             className="pf-v6-u-mt-sm"
           />
         )}

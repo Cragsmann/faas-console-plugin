@@ -40,6 +40,7 @@ describe('CreateFunctionForm', () => {
     canCreateNamespaces: true,
     namespaces: [] as string[],
     namespacesLoading: false,
+    namespaceMissing: false,
   };
 
   afterEach(() => {
