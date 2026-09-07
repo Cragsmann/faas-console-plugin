@@ -9,7 +9,7 @@ import { AuthContext, AuthProvider } from '../../common/context/AuthProvider';
 import { useCluster } from '../../common/clients/useCluster';
 import { createFunction } from '../../common/clients/functionsClient';
 import { EnvVar, K8sKeyedResource, PlainEnvVar, ResourceEnvVar } from '../../common/types';
-import { errorMessage } from '../../common/utils/utils';
+import { errorMessage, isNotFoundError } from '../../common/utils/utils';
 
 export default function FunctionCreatePage() {
   return (
@@ -32,6 +32,7 @@ function FunctionCreatePageContent() {
     canCreateNamespaces,
     namespaces,
     namespacesLoading,
+    namespaceMissing,
     onNamespaceChange,
   } = useFunctionCreatePage();
 
@@ -67,6 +68,7 @@ function FunctionCreatePageContent() {
             canCreateNamespaces={canCreateNamespaces}
             namespaces={namespaces}
             namespacesLoading={namespacesLoading}
+            namespaceMissing={namespaceMissing}
           />
         )}
       </PageSection>
@@ -83,19 +85,24 @@ function useFunctionCreatePage(): {
   canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoading: boolean;
+  namespaceMissing: boolean;
   handleSubmit: (data: CreateFunctionFormData) => Promise<void>;
   handleCancel: () => void;
   onNamespaceChange: (namespace: string) => void;
 } {
+  const { t } = useTranslation('plugin__console-functions-plugin');
   const navigate = useNavigate();
   const isConnectedToForge = useContext(AuthContext).isAuthenticated;
   const [namespace, setNamespace] = useState('');
   const debouncedNamespace = useDebouncedValue(namespace, 300);
-  const { secrets, configMaps, canCreateNamespaces, namespaces, namespacesLoading } = useCluster(
-    [],
-    debouncedNamespace,
-    { withNamespaceOptions: true },
-  );
+  const {
+    secrets,
+    configMaps,
+    canCreateNamespaces,
+    namespaces,
+    namespacesLoading,
+    namespaceMissing,
+  } = useCluster([], debouncedNamespace, { withNamespaceOptions: true });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +125,13 @@ function useFunctionCreatePage(): {
 
       navigate('/faas');
     } catch (err) {
-      setError(errorMessage(err));
+      // A submit-time k8s 404 means the namespace does not exist; show a friendly message
+      // instead of the raw "http code: 404" from the client.
+      setError(
+        isNotFoundError(err)
+          ? t('Namespace "{{namespace}}" does not exist.', { namespace: data.namespace })
+          : errorMessage(err),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -139,6 +152,7 @@ function useFunctionCreatePage(): {
     canCreateNamespaces,
     namespaces,
     namespacesLoading,
+    namespaceMissing,
     onNamespaceChange: setNamespace,
   };
 }

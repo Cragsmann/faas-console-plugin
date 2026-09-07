@@ -123,6 +123,26 @@ describe('useCluster', () => {
 
       expect(result.current.error).toBeNull();
     });
+
+    it('reports namespaceMissing when the namespace watch returns not-found', () => {
+      setWatchFixtures({ canCreate: true, secretError: { code: 404, reason: 'NotFound' } });
+
+      const { result } = renderHook(() =>
+        useCluster([], namespace, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.namespaceMissing).toBe(true);
+    });
+
+    it('does not report namespaceMissing when the namespace exists', () => {
+      setWatchFixtures({ canCreate: true });
+
+      const { result } = renderHook(() =>
+        useCluster([], namespace, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.namespaceMissing).toBe(false);
+    });
   });
 
   describe('namespace options', () => {

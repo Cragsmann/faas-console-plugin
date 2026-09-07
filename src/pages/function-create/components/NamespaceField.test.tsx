@@ -13,6 +13,7 @@ describe('NamespaceField', () => {
     canCreateNamespaces: true,
     namespaces: [] as string[],
     loading: false,
+    namespaceMissing: false,
     value: '',
     onChange,
   };
@@ -41,6 +42,18 @@ describe('NamespaceField', () => {
       render(<NamespaceField {...defaultProps} value="openshift-monitoring" />);
 
       expect(screen.getByText(/system namespace/i)).toBeInTheDocument();
+    });
+
+    it('warns when the typed namespace does not exist', () => {
+      render(<NamespaceField {...defaultProps} value="ghost" namespaceMissing />);
+
+      expect(screen.getByText(/does not exist/i)).toBeInTheDocument();
+    });
+
+    it('does not warn about non-existence when the namespace exists', () => {
+      render(<NamespaceField {...defaultProps} value="team-a" namespaceMissing={false} />);
+
+      expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
     });
   });
 

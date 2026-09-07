@@ -63,6 +63,7 @@ interface CreateFunctionFormProps {
   canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoading: boolean;
+  namespaceMissing: boolean;
   onSubmit: (data: CreateFunctionFormData) => void;
   onCancel: () => void;
   onNamespaceChange: (namespace: string) => void;
@@ -78,6 +79,7 @@ export function CreateFunctionForm({
   canCreateNamespaces,
   namespaces,
   namespacesLoading,
+  namespaceMissing,
 }: CreateFunctionFormProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
   const { fields, namespace, registry, setField, setEnvVars, isValid } = useCreateFunctionForm(
@@ -142,6 +144,7 @@ export function CreateFunctionForm({
           canCreateNamespaces={canCreateNamespaces}
           namespaces={namespaces}
           loading={namespacesLoading}
+          namespaceMissing={namespaceMissing}
           value={namespace}
           onChange={(val) => setField('namespace', val)}
         />

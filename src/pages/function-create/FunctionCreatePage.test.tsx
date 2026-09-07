@@ -39,7 +39,12 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
 
   const consoleFetch = async (url: string, options?: RequestInit) => {
     const res = await fetch(new URL(url, 'http://localhost').href, options);
-    if (!res.ok) throw await res.json();
+    if (!res.ok) {
+      // Mirror the SDK: a non-ok response is thrown as an Error with the Response attached,
+      // so callers can inspect the status (e.g. isNotFoundError on a 404).
+      const json = await res.json();
+      throw Object.assign(new Error(json.message), { response: res, json });
+    }
     return res;
   };
 
@@ -144,12 +149,12 @@ describe('FunctionCreatePage', () => {
     });
   });
 
-  it('surfaces an error and does not navigate when submit fails with a 404', async () => {
+  it('shows a friendly not-found message and does not navigate when submit fails with a 404', async () => {
     const user = userEvent.setup();
 
     server.use(
       http.post(`${BACKEND_API}/api/v1/func/create`, () =>
-        HttpResponse.json({ message: 'namespace not found' }, { status: 404 }),
+        HttpResponse.json({ message: 'http code: 404' }, { status: 404 }),
       ),
     );
 
@@ -159,8 +164,9 @@ describe('FunctionCreatePage', () => {
     await user.click(screen.getByRole('button', { name: /Create/ }));
 
     await waitFor(() => {
-      expect(screen.getByText('Error creating function')).toBeInTheDocument();
+      expect(screen.getByText(/does not exist/i)).toBeInTheDocument();
     });
+    expect(screen.queryByText(/http code: 404/)).not.toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
