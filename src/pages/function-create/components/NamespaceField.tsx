@@ -8,10 +8,9 @@ import {
 } from '@patternfly/react-core';
 import { useTranslation } from 'react-i18next';
 import { isSystemNamespace } from '../../../common/utils/utils';
-import { NamespaceRole } from '../../../common/clients/namespace';
 
 interface NamespaceFieldProps {
-  role: NamespaceRole;
+  canCreateNamespaces: boolean;
   namespaces: string[];
   loading: boolean;
   value: string;
@@ -19,7 +18,7 @@ interface NamespaceFieldProps {
 }
 
 export function NamespaceField({
-  role,
+  canCreateNamespaces,
   namespaces,
   loading,
   value,
@@ -35,37 +34,11 @@ export function NamespaceField({
     );
   }
 
-  if (role === 'developer-none') {
+  // A user who can create namespaces types the target namespace freely (including a
+  // not-yet-created one), with a warning if it is a system namespace.
+  if (canCreateNamespaces) {
     return (
-      <FormGroup label={t('Namespace')}>
-        <Alert
-          variant="info"
-          isInline
-          title={t(
-            'You do not have access to any namespaces. Contact an administrator to get access to a namespace for your functions.',
-          )}
-        />
-      </FormGroup>
-    );
-  }
-
-  return (
-    <FormGroup label={t('Namespace')} isRequired fieldId="namespace">
-      {role === 'developer-single' ? (
-        <TextInput id="namespace" isRequired isDisabled value={value} aria-label={t('Namespace')} />
-      ) : role === 'developer-multi' ? (
-        <FormSelect
-          id="namespace"
-          value={value}
-          onChange={(_, val) => onChange(val)}
-          aria-label={t('Namespace')}
-        >
-          <FormSelectOption value="" label={t('Select...')} isPlaceholder />
-          {namespaces.map((ns) => (
-            <FormSelectOption key={ns} value={ns} label={ns} />
-          ))}
-        </FormSelect>
-      ) : (
+      <FormGroup label={t('Namespace')} isRequired fieldId="namespace">
         <TextInput
           id="namespace"
           isRequired
@@ -73,16 +46,54 @@ export function NamespaceField({
           onChange={(_, val) => onChange(val)}
           aria-label={t('Namespace')}
         />
-      )}
-      {isSystemNamespace(value) && (
-        <Alert
-          variant="warning"
-          isInline
-          title={t(
-            'Functions should not be deployed to a system namespace. Deployment there is likely to fail. Create a new namespace for your functions instead.',
-          )}
-          className="pf-v6-u-mt-sm"
+        {isSystemNamespace(value) && (
+          <Alert
+            variant="warning"
+            isInline
+            title={t(
+              'Functions should not be deployed to a system namespace. Deployment there is likely to fail. Create a new namespace for your functions instead.',
+            )}
+            className="pf-v6-u-mt-sm"
+          />
+        )}
+      </FormGroup>
+    );
+  }
+
+  // A user who cannot create namespaces should never be offered a system namespace, so
+  // filter them out here regardless of what the caller passed in.
+  const selectable = namespaces.filter((ns) => !isSystemNamespace(ns));
+
+  if (selectable.length === 0) {
+    return (
+      <FormGroup label={t('Namespace')}>
+        <Alert variant="info" isInline title={t('No namespaces available.')} />
+      </FormGroup>
+    );
+  }
+
+  return (
+    <FormGroup label={t('Namespace')} isRequired fieldId="namespace">
+      {selectable.length === 1 ? (
+        <TextInput
+          id="namespace"
+          isRequired
+          isDisabled
+          value={selectable[0]}
+          aria-label={t('Namespace')}
         />
+      ) : (
+        <FormSelect
+          id="namespace"
+          value={value}
+          onChange={(_, val) => onChange(val)}
+          aria-label={t('Namespace')}
+        >
+          <FormSelectOption value="" label={t('Select...')} isPlaceholder />
+          {selectable.map((ns) => (
+            <FormSelectOption key={ns} value={ns} label={ns} />
+          ))}
+        </FormSelect>
       )}
     </FormGroup>
   );

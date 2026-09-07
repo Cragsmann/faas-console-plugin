@@ -5,7 +5,7 @@ import {
   WatchK8sResource,
 } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
-import { isNotFoundError } from '../utils/utils';
+import { isNotFoundError, isSystemNamespace } from '../utils/utils';
 import {
   ClusterFunction,
   FUNCTION_NAME_LABEL,
@@ -13,7 +13,6 @@ import {
   K8sKeyedResource,
   REVISION_LABEL,
 } from '../types';
-import { NamespaceRole, resolveNamespace } from './namespace';
 
 interface ClusterOptions {
   // The namespace options (role, accessible namespaces) require an access review and a
@@ -31,7 +30,7 @@ export function useCluster(
   configMaps: K8sKeyedResource[];
   loaded: boolean;
   error: Error;
-  role: NamespaceRole;
+  canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoading: boolean;
 } {
@@ -58,30 +57,23 @@ export function useCluster(
 
   const [projects, projectsLoaded] = useK8sWatchResource<K8sResourceKind[]>(projectConfig);
 
-  const namespaces = useMemo(
-    () =>
-      (projects ?? [])
-        .map((p) => p.metadata?.name)
-        .filter((name): name is string => Boolean(name))
-        .sort(),
-    [projects],
-  );
+  // A user who cannot create namespaces should never be offered a system namespace, so
+  // those are filtered out of their choices; an admin keeps the full list.
+  const namespaces = useMemo(() => {
+    const all = (projects ?? [])
+      .map((p) => p.metadata?.name)
+      .filter((name): name is string => Boolean(name))
+      .sort();
+    return canCreateNamespaces ? all : all.filter((name) => !isSystemNamespace(name));
+  }, [projects, canCreateNamespaces]);
 
   const namespacesLoading = withNamespaceOptions && (accessLoading || !projectsLoaded);
 
-  const role: NamespaceRole = canCreateNamespaces
-    ? 'admin'
-    : namespaces.length === 0
-      ? 'developer-none'
-      : namespaces.length === 1
-        ? 'developer-single'
-        : 'developer-multi';
-
-  // A single-namespace developer has no editable control, so watch their one namespace
-  // rather than the (empty) typed value.
-  const effectiveNamespace = withNamespaceOptions
-    ? resolveNamespace(role, namespaces, namespace ?? '')
-    : namespace;
+  // A developer with a single accessible namespace has no editable control, so watch their
+  // one namespace rather than the (empty) typed value.
+  const forcedSingleNamespace =
+    withNamespaceOptions && !canCreateNamespaces && namespaces.length === 1;
+  const effectiveNamespace = forcedSingleNamespace ? namespaces[0] : namespace;
 
   const knSvcConfig = useMemo(
     () => newKsvcWatchConfig(functionNames, namespace),
@@ -129,7 +121,7 @@ export function useCluster(
     configMaps,
     loaded,
     error: knError || depError || namespaceScopedError,
-    role,
+    canCreateNamespaces,
     namespaces,
     namespacesLoading,
   };

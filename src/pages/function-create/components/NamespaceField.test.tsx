@@ -10,7 +10,7 @@ describe('NamespaceField', () => {
   const onChange = vi.fn();
 
   const defaultProps = {
-    role: 'admin' as const,
+    canCreateNamespaces: true,
     namespaces: [] as string[],
     loading: false,
     value: '',
@@ -21,7 +21,7 @@ describe('NamespaceField', () => {
     vi.clearAllMocks();
   });
 
-  describe('admin', () => {
+  describe('user who can create namespaces', () => {
     it('renders a free-text namespace input', () => {
       render(<NamespaceField {...defaultProps} />);
 
@@ -45,10 +45,16 @@ describe('NamespaceField', () => {
   });
 
   describe('developer with no namespaces', () => {
-    it('shows a contact-administrator message and no input', () => {
-      render(<NamespaceField {...defaultProps} role="developer-none" />);
+    const noneProps = {
+      ...defaultProps,
+      canCreateNamespaces: false,
+      namespaces: [] as string[],
+    };
 
-      expect(screen.getByText(/administrator/i)).toBeInTheDocument();
+    it('shows a generic no-namespaces message and no input', () => {
+      render(<NamespaceField {...noneProps} />);
+
+      expect(screen.getByText(/no namespaces available/i)).toBeInTheDocument();
       expect(screen.queryByRole('textbox', { name: /Namespace/ })).not.toBeInTheDocument();
       expect(screen.queryByRole('combobox', { name: /Namespace/ })).not.toBeInTheDocument();
     });
@@ -57,12 +63,12 @@ describe('NamespaceField', () => {
   describe('developer with exactly one namespace', () => {
     const singleProps = {
       ...defaultProps,
-      role: 'developer-single' as const,
+      canCreateNamespaces: false,
       namespaces: ['team-a'],
-      value: 'team-a',
+      value: '',
     };
 
-    it('prefills and disables the namespace input', () => {
+    it('shows the sole namespace even when no value is set, and disables the input', () => {
       render(<NamespaceField {...singleProps} />);
 
       const input = screen.getByRole('textbox', { name: /Namespace/ });
@@ -74,7 +80,7 @@ describe('NamespaceField', () => {
   describe('developer with multiple namespaces', () => {
     const multiProps = {
       ...defaultProps,
-      role: 'developer-multi' as const,
+      canCreateNamespaces: false,
       namespaces: ['team-a', 'team-b'],
     };
 
@@ -84,6 +90,22 @@ describe('NamespaceField', () => {
       expect(screen.getByRole('combobox', { name: /Namespace/ })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'team-a' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'team-b' })).toBeInTheDocument();
+    });
+
+    it('filters system namespaces out of the dropdown', () => {
+      render(
+        <NamespaceField
+          {...multiProps}
+          namespaces={['team-a', 'openshift-monitoring', 'kube-system', 'team-b']}
+        />,
+      );
+
+      expect(screen.getByRole('option', { name: 'team-a' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'team-b' })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('option', { name: 'openshift-monitoring' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'kube-system' })).not.toBeInTheDocument();
     });
 
     it('calls onChange when a namespace is selected', async () => {
