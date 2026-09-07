@@ -126,38 +126,27 @@ describe('useCluster', () => {
   });
 
   describe('namespace options', () => {
-    it('reports admin when the user can create namespaces', () => {
+    it('reports canCreateNamespaces true when the user can create namespaces', () => {
       setWatchFixtures({ canCreate: true });
 
       const { result } = renderHook(() =>
         useCluster([], undefined, { withNamespaceOptions: true }),
       );
 
-      expect(result.current.role).toBe('admin');
+      expect(result.current.canCreateNamespaces).toBe(true);
     });
 
-    it('reports developer-none when the user has no namespaces', () => {
-      setWatchFixtures({ canCreate: false, projects: [] });
-
-      const { result } = renderHook(() =>
-        useCluster([], undefined, { withNamespaceOptions: true }),
-      );
-
-      expect(result.current.role).toBe('developer-none');
-    });
-
-    it('reports developer-single with one accessible namespace', () => {
+    it('reports canCreateNamespaces false when the user cannot create namespaces', () => {
       setWatchFixtures({ canCreate: false, projects: [projectFixture('team-a')] });
 
       const { result } = renderHook(() =>
         useCluster([], undefined, { withNamespaceOptions: true }),
       );
 
-      expect(result.current.role).toBe('developer-single');
-      expect(result.current.namespaces).toEqual(['team-a']);
+      expect(result.current.canCreateNamespaces).toBe(false);
     });
 
-    it('reports developer-multi with several namespaces, sorted', () => {
+    it('returns the accessible namespaces sorted', () => {
       setWatchFixtures({
         canCreate: false,
         projects: [projectFixture('team-b'), projectFixture('team-a')],
@@ -167,8 +156,38 @@ describe('useCluster', () => {
         useCluster([], undefined, { withNamespaceOptions: true }),
       );
 
-      expect(result.current.role).toBe('developer-multi');
       expect(result.current.namespaces).toEqual(['team-a', 'team-b']);
+    });
+
+    it('filters out system namespaces for a user who cannot create namespaces', () => {
+      setWatchFixtures({
+        canCreate: false,
+        projects: [
+          projectFixture('team-a'),
+          projectFixture('openshift-monitoring'),
+          projectFixture('kube-system'),
+          projectFixture('default'),
+        ],
+      });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.namespaces).toEqual(['team-a']);
+    });
+
+    it('keeps system namespaces for a user who can create namespaces', () => {
+      setWatchFixtures({
+        canCreate: true,
+        projects: [projectFixture('team-a'), projectFixture('openshift-monitoring')],
+      });
+
+      const { result } = renderHook(() =>
+        useCluster([], undefined, { withNamespaceOptions: true }),
+      );
+
+      expect(result.current.namespaces).toEqual(['openshift-monitoring', 'team-a']);
     });
 
     it('is loading while the access review is pending', () => {
@@ -213,7 +232,7 @@ describe('useCluster', () => {
 
       const { result } = renderHook(() => useCluster([funcName]));
 
-      expect(result.current.role).toBe('developer-none');
+      expect(result.current.canCreateNamespaces).toBe(false);
       expect(result.current.namespaces).toEqual([]);
       expect(result.current.namespacesLoading).toBe(false);
     });

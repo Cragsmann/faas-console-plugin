@@ -31,7 +31,6 @@ import {
 import { AuthContext } from '../../../common/context/AuthProvider';
 import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
 import { NamespaceField } from './NamespaceField';
-import { NamespaceRole, resolveNamespace } from '../../../common/clients/namespace';
 
 const OCP_INTERNAL_REGISTRY = 'image-registry.openshift-image-registry.svc:5000/';
 
@@ -61,7 +60,7 @@ interface CreateFunctionFormProps {
   secrets: K8sKeyedResource[];
   configMaps: K8sKeyedResource[];
   isSubmitting: boolean;
-  role: NamespaceRole;
+  canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoading: boolean;
   onSubmit: (data: CreateFunctionFormData) => void;
@@ -76,13 +75,13 @@ export function CreateFunctionForm({
   onCancel,
   onNamespaceChange,
   isSubmitting,
-  role,
+  canCreateNamespaces,
   namespaces,
   namespacesLoading,
 }: CreateFunctionFormProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
   const { fields, namespace, registry, setField, setEnvVars, isValid } = useCreateFunctionForm(
-    role,
+    canCreateNamespaces,
     namespaces,
     onNamespaceChange,
   );
@@ -140,7 +139,7 @@ export function CreateFunctionForm({
           <TextInput id="registry" isRequired isDisabled value={registry} />
         </FormGroup>
         <NamespaceField
-          role={role}
+          canCreateNamespaces={canCreateNamespaces}
           namespaces={namespaces}
           loading={namespacesLoading}
           value={namespace}
@@ -179,7 +178,7 @@ export function CreateFunctionForm({
 type OwnedFields = Omit<CreateFunctionFormData, 'namespace' | 'registry'> & { namespace: string };
 
 function useCreateFunctionForm(
-  role: NamespaceRole,
+  canCreateNamespaces: boolean,
   namespaces: string[],
   onNamespaceChange: (namespace: string) => void,
 ) {
@@ -196,7 +195,8 @@ function useCreateFunctionForm(
     configMapEnvVars: [],
   });
 
-  const namespace = resolveNamespace(role, namespaces, fields.namespace);
+  const namespace =
+    !canCreateNamespaces && namespaces.length === 1 ? namespaces[0] : fields.namespace;
   const registry = OCP_INTERNAL_REGISTRY + namespace;
 
   const setField = (key: keyof OwnedFields, value: string) => {

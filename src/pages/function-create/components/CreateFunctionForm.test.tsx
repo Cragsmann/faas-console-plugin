@@ -27,9 +27,9 @@ describe('CreateFunctionForm', () => {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
 
-  // Render the namespace field as an admin (free-text input) so these form tests
-  // exercise the free-text namespace behavior. NamespaceField has its own tests
-  // for the role-specific branches.
+  // Render the namespace field as a user who can create namespaces (free-text input) so
+  // these form tests exercise the free-text namespace behavior. NamespaceField has its
+  // own tests for the developer branches.
   const defaultProps = {
     onSubmit,
     onCancel,
@@ -37,7 +37,7 @@ describe('CreateFunctionForm', () => {
     isSubmitting: false,
     secrets: emptySecrets,
     configMaps: emptyConfigMaps,
-    role: 'admin' as const,
+    canCreateNamespaces: true,
     namespaces: [] as string[],
     namespacesLoading: false,
   };

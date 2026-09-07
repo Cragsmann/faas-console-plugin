@@ -8,7 +8,6 @@ import { UserAvatar } from '../../common/components/UserAvatar';
 import { AuthContext, AuthProvider } from '../../common/context/AuthProvider';
 import { useCluster } from '../../common/clients/useCluster';
 import { createFunction } from '../../common/clients/functionsClient';
-import { NamespaceRole } from '../../common/clients/namespace';
 import { EnvVar, K8sKeyedResource, PlainEnvVar, ResourceEnvVar } from '../../common/types';
 import { errorMessage } from '../../common/utils/utils';
 
@@ -30,7 +29,7 @@ function FunctionCreatePageContent() {
     isConnectedToForge,
     secrets,
     configMaps,
-    role,
+    canCreateNamespaces,
     namespaces,
     namespacesLoading,
     onNamespaceChange,
@@ -65,7 +64,7 @@ function FunctionCreatePageContent() {
             onCancel={handleCancel}
             onNamespaceChange={onNamespaceChange}
             isSubmitting={isSubmitting}
-            role={role}
+            canCreateNamespaces={canCreateNamespaces}
             namespaces={namespaces}
             namespacesLoading={namespacesLoading}
           />
@@ -81,7 +80,7 @@ function useFunctionCreatePage(): {
   isSubmitting: boolean;
   isConnectedToForge: boolean;
   error: string | null;
-  role: NamespaceRole;
+  canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoading: boolean;
   handleSubmit: (data: CreateFunctionFormData) => Promise<void>;
@@ -92,7 +91,7 @@ function useFunctionCreatePage(): {
   const isConnectedToForge = useContext(AuthContext).isAuthenticated;
   const [namespace, setNamespace] = useState('');
   const debouncedNamespace = useDebouncedValue(namespace, 300);
-  const { secrets, configMaps, role, namespaces, namespacesLoading } = useCluster(
+  const { secrets, configMaps, canCreateNamespaces, namespaces, namespacesLoading } = useCluster(
     [],
     debouncedNamespace,
     { withNamespaceOptions: true },
@@ -137,7 +136,7 @@ function useFunctionCreatePage(): {
     isConnectedToForge,
     secrets,
     configMaps,
-    role,
+    canCreateNamespaces,
     namespaces,
     namespacesLoading,
     onNamespaceChange: setNamespace,
