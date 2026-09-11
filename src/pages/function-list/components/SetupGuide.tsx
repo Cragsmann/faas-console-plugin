@@ -9,11 +9,7 @@ import {
 import { ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-interface SetupGuideProps {
-  className?: string;
-}
-
-export function SetupGuide({ className }: SetupGuideProps) {
+export function SetupGuide({ className }: { className?: string }) {
   const { t } = useTranslation('plugin__console-functions-plugin');
   const [isOpen, setIsOpen] = useState(false);
 
