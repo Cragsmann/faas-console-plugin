@@ -111,7 +111,7 @@ function useFunctionCreatePage(): {
 
   const { secrets, configMaps } = useCluster({
     functionNames: [],
-    inputNamespace: debouncedNamespace,
+    namespace: debouncedNamespace,
   });
 
   const trimmed = debouncedNamespace.trim();

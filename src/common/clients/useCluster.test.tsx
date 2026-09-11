@@ -36,7 +36,7 @@ describe('useCluster', () => {
 
     it('reports loaded when all watches complete', () => {
       const { result } = renderHook(() =>
-        useCluster({ functionNames: [funcName], inputNamespace: namespace }),
+        useCluster({ functionNames: [funcName], namespace: namespace }),
       );
 
       expect(result.current.loaded).toBe(true);
@@ -47,7 +47,7 @@ describe('useCluster', () => {
       setWatchFixtures({ secretLoaded: false });
 
       const { result } = renderHook(() =>
-        useCluster({ functionNames: [funcName], inputNamespace: namespace }),
+        useCluster({ functionNames: [funcName], namespace: namespace }),
       );
 
       expect(result.current.loaded).toBe(false);
@@ -57,7 +57,7 @@ describe('useCluster', () => {
       setWatchFixtures({ cmLoaded: false });
 
       const { result } = renderHook(() =>
-        useCluster({ functionNames: [funcName], inputNamespace: namespace }),
+        useCluster({ functionNames: [funcName], namespace: namespace }),
       );
 
       expect(result.current.loaded).toBe(false);
@@ -88,7 +88,7 @@ describe('useCluster', () => {
       setWatchFixtures({ secretError: new Error(errMsg) });
 
       const { result } = renderHook(() =>
-        useCluster({ functionNames: [funcName], inputNamespace: namespace }),
+        useCluster({ functionNames: [funcName], namespace: namespace }),
       );
 
       expect(result.current.error.message).toBe(errMsg);
@@ -99,7 +99,7 @@ describe('useCluster', () => {
       setWatchFixtures({ cmError: new Error(errMsg) });
 
       const { result } = renderHook(() =>
-        useCluster({ functionNames: [funcName], inputNamespace: namespace }),
+        useCluster({ functionNames: [funcName], namespace: namespace }),
       );
 
       expect(result.current.error.message).toBe(errMsg);
@@ -344,9 +344,7 @@ describe('useCluster', () => {
         secrets: [secretFixture(dbCreds, secretData), secretFixture(apiKey, { key: 'c2VjcmV0' })],
       });
 
-      const { result } = renderHook(() =>
-        useCluster({ functionNames: [], inputNamespace: namespace }),
-      );
+      const { result } = renderHook(() => useCluster({ functionNames: [], namespace: namespace }));
 
       const secrets = result.current.secrets;
       expect(secrets[0].name).toBe(dbCreds);
@@ -358,9 +356,7 @@ describe('useCluster', () => {
         secrets: [secretFixture(dbCreds, secretData)],
       });
 
-      const { result } = renderHook(() =>
-        useCluster({ functionNames: [], inputNamespace: namespace }),
-      );
+      const { result } = renderHook(() => useCluster({ functionNames: [], namespace: namespace }));
 
       const secretKeys = result.current.secrets[0].keys;
       expect(secretKeys[0]).toBe('username');
@@ -382,9 +378,7 @@ describe('useCluster', () => {
         configMaps: [configMapFixture(appConfig, configData)],
       });
 
-      const { result } = renderHook(() =>
-        useCluster({ functionNames: [], inputNamespace: namespace }),
-      );
+      const { result } = renderHook(() => useCluster({ functionNames: [], namespace: namespace }));
 
       expect(result.current.configMaps[0].name).toBe(appConfig);
     });
@@ -394,9 +388,7 @@ describe('useCluster', () => {
         configMaps: [configMapFixture(appConfig, configData)],
       });
 
-      const { result } = renderHook(() =>
-        useCluster({ functionNames: [], inputNamespace: namespace }),
-      );
+      const { result } = renderHook(() => useCluster({ functionNames: [], namespace: namespace }));
 
       const configMapKeys = result.current.configMaps[0].keys;
       expect(configMapKeys[0]).toBe('log-level');

@@ -208,7 +208,7 @@ function useFunctionListPage(): {
     functionNames,
     // if namespace === #ALL_NS# then we pass 'undefined' to watcher which equals
     // to 'get resources from all namespaces'
-    inputNamespace: isAllNamespacesKey(namespace) ? undefined : namespace,
+    namespace: isAllNamespacesKey(namespace) ? undefined : namespace,
   });
 
   const functions = useMemo(

@@ -56,19 +56,11 @@ export const handlerMap: Record<string, string> = {
   quarkus: 'src/main/java/functions/Function.java',
 };
 
-const SYSTEM_NAMESPACE_PREFIXES = ['openshift-', 'kube-', 'knative-'];
-const SYSTEM_NAMESPACE_NAMES = [
-  'default',
-  'openshift',
-  'kube-system',
-  'kube-public',
-  'kube-node-lease',
-];
+const SYSTEM_NAMESPACE_PREFIXES = ['default', 'openshift', 'kube', 'knative'];
 
 export function isSystemNamespace(namespace: string): boolean {
   const name = namespace.trim();
   if (!name) return false;
-  if (SYSTEM_NAMESPACE_NAMES.includes(name)) return true;
   return SYSTEM_NAMESPACE_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 

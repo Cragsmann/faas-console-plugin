@@ -14,7 +14,7 @@ import {
 
 interface UseClusterProps {
   functionNames: string[];
-  inputNamespace?: string;
+  namespace?: string;
 }
 
 interface UseClusterResult {
@@ -25,18 +25,18 @@ interface UseClusterResult {
   error: Error;
 }
 
-export function useCluster({ functionNames, inputNamespace }: UseClusterProps): UseClusterResult {
+export function useCluster({ functionNames, namespace }: UseClusterProps): UseClusterResult {
   const knSvcConfig = useMemo(
-    () => newKsvcWatchConfig(functionNames, inputNamespace),
-    [functionNames, inputNamespace],
+    () => newKsvcWatchConfig(functionNames, namespace),
+    [functionNames, namespace],
   );
   const depConfig = useMemo(
-    () => newDeploymentWatchConfig(functionNames, inputNamespace),
-    [functionNames, inputNamespace],
+    () => newDeploymentWatchConfig(functionNames, namespace),
+    [functionNames, namespace],
   );
 
-  const secretConfig = useMemo(() => newSecretConfig(inputNamespace), [inputNamespace]);
-  const configMapConfig = useMemo(() => newConfigMapConfig(inputNamespace), [inputNamespace]);
+  const secretConfig = useMemo(() => newSecretConfig(namespace), [namespace]);
+  const configMapConfig = useMemo(() => newConfigMapConfig(namespace), [namespace]);
 
   const [knSvcs, knLoaded, knError] = useK8sWatchResource<K8sResourceKind[]>(knSvcConfig);
   const [deps, depLoaded, depError] = useK8sWatchResource<K8sResourceKind[]>(depConfig);
@@ -54,7 +54,7 @@ export function useCluster({ functionNames, inputNamespace }: UseClusterProps): 
   const secrets = useMemo(() => toKeyedResources(rawSecrets), [rawSecrets]);
   const configMaps = useMemo(() => toKeyedResources(rawConfigMaps), [rawConfigMaps]);
 
-  const loaded = knLoaded && depLoaded && (!inputNamespace || (secretLoaded && cmLoaded));
+  const loaded = knLoaded && depLoaded && (!namespace || (secretLoaded && cmLoaded));
 
   return {
     functions,
