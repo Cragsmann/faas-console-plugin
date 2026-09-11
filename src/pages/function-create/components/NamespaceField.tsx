@@ -1,18 +1,11 @@
-import {
-  Alert,
-  FormGroup,
-  FormSelect,
-  FormSelectOption,
-  Skeleton,
-  TextInput,
-} from '@patternfly/react-core';
+import { Alert, FormGroup, FormSelect, FormSelectOption, TextInput } from '@patternfly/react-core';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isSystemNamespace } from '../../../common/utils/utils';
 
 interface NamespaceFieldProps {
   canCreateNamespaces: boolean;
   namespaces: string[];
-  loading: boolean;
   namespaceMissing: boolean;
   value: string;
   onChange: (namespace: string) => void;
@@ -21,20 +14,18 @@ interface NamespaceFieldProps {
 export function NamespaceField({
   canCreateNamespaces,
   namespaces,
-  loading,
   namespaceMissing,
   value,
   onChange,
 }: NamespaceFieldProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
 
-  if (loading) {
-    return (
-      <FormGroup label={t('Namespace')}>
-        <Skeleton screenreaderText={t('Loading namespaces')} width="100%" />
-      </FormGroup>
-    );
-  }
+  // A user who cannot create namespaces should never be offered a system namespace, so
+  // filter them out here regardless of what the caller passed in.
+  const selectable = useMemo(
+    () => (canCreateNamespaces ? namespaces : namespaces.filter((ns) => !isSystemNamespace(ns))),
+    [canCreateNamespaces, namespaces],
+  );
 
   // A user who can create namespaces types the target namespace freely (including a
   // not-yet-created one), with a warning if it is a system namespace.
@@ -69,10 +60,6 @@ export function NamespaceField({
       </FormGroup>
     );
   }
-
-  // A user who cannot create namespaces should never be offered a system namespace, so
-  // filter them out here regardless of what the caller passed in.
-  const selectable = namespaces.filter((ns) => !isSystemNamespace(ns));
 
   if (selectable.length === 0) {
     return (

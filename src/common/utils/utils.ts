@@ -56,7 +56,7 @@ export const handlerMap: Record<string, string> = {
   quarkus: 'src/main/java/functions/Function.java',
 };
 
-const SYSTEM_NAMESPACE_PREFIXES = ['openshift-', 'kube-'];
+const SYSTEM_NAMESPACE_PREFIXES = ['openshift-', 'kube-', 'knative-'];
 const SYSTEM_NAMESPACE_NAMES = [
   'default',
   'openshift',
@@ -70,16 +70,6 @@ export function isSystemNamespace(namespace: string): boolean {
   if (!name) return false;
   if (SYSTEM_NAMESPACE_NAMES.includes(name)) return true;
   return SYSTEM_NAMESPACE_PREFIXES.some((prefix) => name.startsWith(prefix));
-}
-
-export function isNotFoundError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const record = err as Record<string, unknown>;
-  if (record.code === 404 || record.status === 404 || record.reason === 'NotFound') {
-    return true;
-  }
-  const response = record.response as Record<string, unknown> | undefined;
-  return response?.status === 404;
 }
 
 export function errorMessage(err: unknown): string {

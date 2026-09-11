@@ -1,11 +1,9 @@
 import {
   K8sResourceKind,
-  useAccessReview,
   useK8sWatchResource,
   WatchK8sResource,
 } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
-import { isNotFoundError, isSystemNamespace } from '../utils/utils';
 import {
   ClusterFunction,
   FUNCTION_NAME_LABEL,
@@ -14,82 +12,31 @@ import {
   REVISION_LABEL,
 } from '../types';
 
-interface ClusterOptions {
-  // The namespace options (role, accessible namespaces) require an access review and a
-  // Project watch that only the create form needs, so they stay off by default.
-  withNamespaceOptions?: boolean;
+interface UseClusterProps {
+  functionNames: string[];
+  inputNamespace?: string;
 }
 
-export function useCluster(
-  functionNames: string[] = [],
-  namespace?: string,
-  options: ClusterOptions = {},
-): {
+interface UseClusterResult {
   functions: ReadonlyMap<string, ClusterFunction>;
   secrets: K8sKeyedResource[];
   configMaps: K8sKeyedResource[];
   loaded: boolean;
   error: Error;
-  canCreateNamespaces: boolean;
-  namespaces: string[];
-  namespacesLoading: boolean;
-  namespaceMissing: boolean;
-} {
-  const { withNamespaceOptions = false } = options;
+}
 
-  // An empty group+resource with the third arg set makes the SDK skip the review, so a
-  // consumer that does not need namespace options never fires a SelfSubjectAccessReview.
-  const [canCreateNamespaces, accessLoading] = useAccessReview(
-    withNamespaceOptions ? { group: '', resource: 'namespaces', verb: 'create' } : {},
-    undefined,
-    true,
-  );
-
-  const projectConfig = useMemo(
-    () =>
-      withNamespaceOptions
-        ? {
-            groupVersionKind: { group: 'project.openshift.io', version: 'v1', kind: 'Project' },
-            isList: true,
-          }
-        : null,
-    [withNamespaceOptions],
-  );
-
-  const [projects, projectsLoaded] = useK8sWatchResource<K8sResourceKind[]>(projectConfig);
-
-  // A user who cannot create namespaces should never be offered a system namespace, so
-  // those are filtered out of their choices; an admin keeps the full list.
-  const namespaces = useMemo(() => {
-    const all = (projects ?? [])
-      .map((p) => p.metadata?.name)
-      .filter((name): name is string => Boolean(name))
-      .sort();
-    return canCreateNamespaces ? all : all.filter((name) => !isSystemNamespace(name));
-  }, [projects, canCreateNamespaces]);
-
-  const namespacesLoading = withNamespaceOptions && (accessLoading || !projectsLoaded);
-
-  // A developer with a single accessible namespace has no editable control, so watch their
-  // one namespace rather than the (empty) typed value.
-  const forcedSingleNamespace =
-    withNamespaceOptions && !canCreateNamespaces && namespaces.length === 1;
-  const effectiveNamespace = forcedSingleNamespace ? namespaces[0] : namespace;
-
+export function useCluster({ functionNames, inputNamespace }: UseClusterProps): UseClusterResult {
   const knSvcConfig = useMemo(
-    () => newKsvcWatchConfig(functionNames, namespace),
-    [functionNames, namespace],
+    () => newKsvcWatchConfig(functionNames, inputNamespace),
+    [functionNames, inputNamespace],
   );
   const depConfig = useMemo(
-    () => newDeploymentWatchConfig(functionNames, namespace),
-    [functionNames, namespace],
+    () => newDeploymentWatchConfig(functionNames, inputNamespace),
+    [functionNames, inputNamespace],
   );
 
-  const secretConfig = useMemo(() => newSecretConfig(effectiveNamespace), [effectiveNamespace]);
-  const configMapConfig = useMemo(
-    () => newConfigMapConfig(effectiveNamespace),
-    [effectiveNamespace],
-  );
+  const secretConfig = useMemo(() => newSecretConfig(inputNamespace), [inputNamespace]);
+  const configMapConfig = useMemo(() => newConfigMapConfig(inputNamespace), [inputNamespace]);
 
   const [knSvcs, knLoaded, knError] = useK8sWatchResource<K8sResourceKind[]>(knSvcConfig);
   const [deps, depLoaded, depError] = useK8sWatchResource<K8sResourceKind[]>(depConfig);
@@ -107,32 +54,14 @@ export function useCluster(
   const secrets = useMemo(() => toKeyedResources(rawSecrets), [rawSecrets]);
   const configMaps = useMemo(() => toKeyedResources(rawConfigMaps), [rawConfigMaps]);
 
-  const loaded = knLoaded && depLoaded && (!effectiveNamespace || (secretLoaded && cmLoaded));
-
-  // A not-found watch error just means the namespace does not exist yet (an admin can type
-  // one that has not been created); swallow it so it is not surfaced as a scary error.
-  const namespaceScopedError =
-    (isNotFoundError(secretError) ? null : secretError) ||
-    (isNotFoundError(cmError) ? null : cmError) ||
-    null;
-
-  // A not-found watch error on a set namespace means it does not exist yet; report it as a
-  // dedicated flag so the form can warn inline rather than surfacing a raw error.
-  const namespaceMissing =
-    withNamespaceOptions &&
-    !!effectiveNamespace &&
-    (isNotFoundError(secretError) || isNotFoundError(cmError));
+  const loaded = knLoaded && depLoaded && (!inputNamespace || (secretLoaded && cmLoaded));
 
   return {
     functions,
     secrets,
     configMaps,
     loaded,
-    error: knError || depError || namespaceScopedError,
-    canCreateNamespaces,
-    namespaces,
-    namespacesLoading,
-    namespaceMissing,
+    error: knError || depError || secretError || cmError,
   };
 }
 
