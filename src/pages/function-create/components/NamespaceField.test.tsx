@@ -12,7 +12,6 @@ describe('NamespaceField', () => {
   const defaultProps = {
     canCreateNamespaces: true,
     namespaces: [] as string[],
-    loading: false,
     namespaceMissing: false,
     value: '',
     onChange,
@@ -131,12 +130,20 @@ describe('NamespaceField', () => {
     });
   });
 
-  describe('loading', () => {
-    it('does not render a control while loading', () => {
-      render(<NamespaceField {...defaultProps} loading />);
+  describe('does-not-exist warning', () => {
+    it('is driven by the prop, not recomputed from the live value', () => {
+      // The owner checks the debounced namespace, so a value that is mid-typing and not
+      // yet in the list must not warn until the owner says so.
+      render(
+        <NamespaceField
+          {...defaultProps}
+          namespaces={['team-a']}
+          value="team-"
+          namespaceMissing={false}
+        />,
+      );
 
-      expect(screen.queryByRole('textbox', { name: /Namespace/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole('combobox', { name: /Namespace/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
     });
   });
 });
