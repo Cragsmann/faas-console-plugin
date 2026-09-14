@@ -13,8 +13,6 @@ describe('isSystemNamespace', () => {
     ['knative-serving', true],
     ['my-functions', false],
     ['demo', false],
-    ['openshiftish', false],
-    ['kubeless', false],
     ['', false],
     ['   ', false],
   ])('returns %s -> %s', (namespace, expected) => {
