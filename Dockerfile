@@ -41,6 +41,7 @@ LABEL name="openshift-serverless-tech-preview/functions-console-plugin-rhel9" \
       io.k8s.display-name="OpenShift Serverless Functions Console Plugin" \
       io.k8s.description="A Functions-as-a-Service UI for the OpenShift Web Console" \
       io.openshift.tags="openshift,serverless,functions,faas,console,plugin" \
-      maintainer="serverless-support@redhat.com"
+      maintainer="serverless-support@redhat.com" \
+      cpe="cpe:/a:redhat:openshift_serverless:2.0::el9"
 
 ENTRYPOINT ["plugin-backend"]
