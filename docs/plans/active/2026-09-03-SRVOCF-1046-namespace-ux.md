@@ -1,6 +1,6 @@
 # SRVOCF-1046: Namespace UX on the Create Function form
 
-**Status:** ACTIVE
+**Status:** COMPLETED
 
 **Jira:** [SRVOCF-1046](https://redhat.atlassian.net/browse/SRVOCF-1046) (Story, parent SRVOCF-956). Consolidates and supersedes SRVOCF-1075 (system-namespace warning) and SRVOCF-1076 (non-existent-namespace error), both closed as duplicates.
 

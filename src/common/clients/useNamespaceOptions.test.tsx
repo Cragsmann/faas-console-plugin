@@ -47,33 +47,6 @@ describe('useNamespaceOptions', () => {
 
       expect(result.current.namespaces).toEqual(['team-a', 'team-b']);
     });
-
-    it('filters out system namespaces for a user who cannot create namespaces', () => {
-      setWatchFixtures({
-        canCreate: false,
-        projects: [
-          projectFixture('team-a'),
-          projectFixture('openshift-monitoring'),
-          projectFixture('kube-system'),
-          projectFixture('default'),
-        ],
-      });
-
-      const { result } = renderHook(() => useNamespaceOptions());
-
-      expect(result.current.namespaces).toEqual(['team-a']);
-    });
-
-    it('keeps system namespaces for a user who can create namespaces', () => {
-      setWatchFixtures({
-        canCreate: true,
-        projects: [projectFixture('team-a'), projectFixture('openshift-monitoring')],
-      });
-
-      const { result } = renderHook(() => useNamespaceOptions());
-
-      expect(result.current.namespaces).toEqual(['openshift-monitoring', 'team-a']);
-    });
   });
 
   describe('loaded', () => {

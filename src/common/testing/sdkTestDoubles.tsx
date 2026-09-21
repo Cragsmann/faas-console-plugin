@@ -23,10 +23,10 @@ type WatchFixtures = {
   projectsLoaded?: boolean;
   canCreate?: boolean;
   accessLoading?: boolean;
-  knError?: unknown;
-  depError?: unknown;
-  secretError?: unknown;
-  cmError?: unknown;
+  knError?: Error;
+  depError?: Error;
+  secretError?: Error;
+  cmError?: Error;
 };
 
 const watchFixtures: WatchFixtures = {
@@ -72,7 +72,6 @@ export function projectFixture(name: string): K8sResourceKind {
 // SelfSubjectAccessReview.
 export const useAccessReviewStub = (
   attrs: { group?: string; resource?: string; verb?: string },
-  _impersonate?: unknown,
   noCheck?: boolean,
 ): [boolean, boolean] => {
   if (noCheck && !attrs.group && !attrs.resource) return [false, false];

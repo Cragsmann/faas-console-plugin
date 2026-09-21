@@ -54,7 +54,8 @@ export function useCluster({ functionNames, namespace }: UseClusterProps): UseCl
   const secrets = useMemo(() => toKeyedResources(rawSecrets), [rawSecrets]);
   const configMaps = useMemo(() => toKeyedResources(rawConfigMaps), [rawConfigMaps]);
 
-  const loaded = knLoaded && depLoaded && (!namespace || (secretLoaded && cmLoaded));
+  let loaded = knLoaded && depLoaded;
+  if (namespace) loaded = loaded && secretLoaded && cmLoaded;
 
   return {
     functions,

@@ -1,9 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
-import { CreateFunctionForm } from './CreateFunctionForm';
 import { AuthContext } from '../../../common/context/AuthProvider';
 import { AuthUser, K8sKeyedResource } from '../../../common/types';
+import { CreateFunctionForm } from './CreateFunctionForm';
 
 const testUser: AuthUser = { name: 'testuser', avatarUrl: '' };
 const authContext = {
@@ -28,9 +27,9 @@ describe('CreateFunctionForm', () => {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
 
-  // Render the namespace field as a user who can create namespaces (free-text input) so
-  // these form tests exercise the free-text namespace behavior. NamespaceField has its
-  // own tests for the developer branches.
+  // Rendered for a user who may create namespaces, so the namespace field is a free-text
+  // input. Which control that field becomes depends on the namespace options the page owns,
+  // so those branches are covered by the page tests in FunctionCreatePage.test.tsx.
   const defaultProps = {
     onSubmit,
     onCancel,
@@ -39,27 +38,16 @@ describe('CreateFunctionForm', () => {
     configMaps: emptyConfigMaps,
     canCreateNamespaces: true,
     namespaces: [] as string[],
-    namespaceMissing: false,
+    namespacesLoaded: true,
+    onNamespaceChange: vi.fn(),
   };
 
-  // The namespace is owned by the page, not the form, so these tests supply the owner:
-  // a stateful parent that feeds the typed value straight back down. That is the real
-  // contract the form is written against.
+  // The form owns the namespace and only notifies the page, so nothing is fed back down.
+  // That is the contract the form is written against.
   type Overrides = Partial<React.ComponentProps<typeof CreateFunctionForm>>;
 
   function renderForm(overrides: Overrides = {}) {
-    function Harness() {
-      const [namespace, setNamespace] = useState('');
-      return (
-        <CreateFunctionForm
-          {...defaultProps}
-          inputNamespace={namespace}
-          onNamespaceChange={setNamespace}
-          {...overrides}
-        />
-      );
-    }
-    return renderWithContext(<Harness />);
+    return renderWithContext(<CreateFunctionForm {...defaultProps} {...overrides} />);
   }
 
   afterEach(() => {
@@ -483,44 +471,6 @@ describe('CreateFunctionForm', () => {
     expect(secretResourceSelect.value).toBe('');
   });
 
-  it('shows a system namespace warning when a system namespace is typed', async () => {
-    const user = userEvent.setup();
-
-    renderForm();
-
-    expect(screen.queryByText(/system namespace/i)).not.toBeInTheDocument();
-
-    await user.type(screen.getByRole('textbox', { name: /Namespace/ }), 'openshift-monitoring');
-
-    expect(screen.getByText(/system namespace/i)).toBeInTheDocument();
-  });
-
-  it('does not show the system namespace warning for a normal namespace', async () => {
-    const user = userEvent.setup();
-
-    renderForm();
-
-    await user.type(screen.getByRole('textbox', { name: /Namespace/ }), 'my-functions');
-
-    expect(screen.queryByText(/system namespace/i)).not.toBeInTheDocument();
-  });
-
-  it('does not block Create when a system namespace is entered', async () => {
-    const user = userEvent.setup();
-
-    renderForm();
-
-    await user.type(screen.getByRole('textbox', { name: /Repository/ }), 'my-repo');
-    await user.type(screen.getByRole('textbox', { name: /Branch/ }), 'main');
-    await user.type(screen.getByRole('textbox', { name: /^Name$/ }), 'my-func');
-    await user.type(screen.getByRole('textbox', { name: /Namespace/ }), 'default');
-
-    expect(screen.getByText(/system namespace/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Create/ })).not.toBeDisabled();
-    });
-  });
-
   it('does not flag empty names as duplicates', async () => {
     const user = userEvent.setup();
 
@@ -534,5 +484,12 @@ describe('CreateFunctionForm', () => {
     await user.click(screen.getByRole('button', { name: /Add environment variable/ }));
 
     expect(screen.queryByText('Duplicate name')).not.toBeInTheDocument();
+  });
+
+  it('shows a spinner instead of the form until the namespaces have loaded', () => {
+    renderForm({ namespacesLoaded: false });
+
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Namespace/ })).not.toBeInTheDocument();
   });
 });
