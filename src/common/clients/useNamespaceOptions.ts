@@ -5,7 +5,6 @@ import {
   WatchK8sResource,
 } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
-import { isSystemNamespace } from '../utils/utils';
 
 const PROJECT_CONFIG: WatchK8sResource = {
   groupVersionKind: { group: 'project.openshift.io', version: 'v1', kind: 'Project' },
@@ -32,15 +31,12 @@ export function useNamespaceOptions(): UseNamespaceOptionsResult {
   const [projects, projectsLoaded, projectsError] =
     useK8sWatchResource<K8sResourceKind[]>(PROJECT_CONFIG);
 
-  // A user who cannot create namespaces should never be offered a system namespace, so
-  // those are filtered out of their choices; an admin keeps the full list.
   const namespaces = useMemo(() => {
-    const all = (projects ?? [])
+    return (projects ?? [])
       .map((p) => p.metadata?.name)
       .filter((name): name is string => Boolean(name))
       .sort();
-    return canCreateNamespaces ? all : all.filter((name) => !isSystemNamespace(name));
-  }, [projects, canCreateNamespaces]);
+  }, [projects]);
 
   return {
     canCreateNamespaces,

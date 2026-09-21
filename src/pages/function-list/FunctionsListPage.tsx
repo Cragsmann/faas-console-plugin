@@ -28,7 +28,7 @@ import { AuthContext, AuthProvider } from '../../common/context/AuthProvider';
 import { ClusterFunction, FunctionListItem } from '../../common/types';
 import { useCluster } from '../../common/clients/useCluster';
 import { listFunctions } from '../../common/clients/functionsClient';
-import { errorMessage } from '../../common/utils/utils';
+import { handleErrorMessage } from '../../common/utils/utils';
 
 export default function FunctionsListPage() {
   return (
@@ -166,7 +166,7 @@ function useFunctionListPage(): {
       setNamespaceLoaded(true);
       setError('');
     } catch (err) {
-      setError(errorMessage(err));
+      setError(handleErrorMessage(err));
     } finally {
       setRefreshing(false);
     }
@@ -185,7 +185,7 @@ function useFunctionListPage(): {
       } catch (err) {
         if (!ignore) {
           setNamespaceLoaded(true);
-          setError(errorMessage(err));
+          setError(handleErrorMessage(err));
         }
         return;
       }
