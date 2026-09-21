@@ -104,7 +104,7 @@ describe('FunctionCreatePage', () => {
 
   it('creates function via backend, then navigates on submit', async () => {
     const user = userEvent.setup();
-    captureCreateRequest();
+    backendAccepting();
 
     renderPage();
 
@@ -134,7 +134,11 @@ describe('FunctionCreatePage', () => {
 
   it('sends environment variables to backend during submission', async () => {
     const user = userEvent.setup();
-    const created = captureCreateRequest();
+    backendAccepting({
+      envVars: [
+        { name: 'MY_VAR', source: 'value', value: 'my-value', resourceName: '', resourceKey: '' },
+      ],
+    });
 
     renderPage();
 
@@ -147,9 +151,6 @@ describe('FunctionCreatePage', () => {
     await user.click(screen.getByRole('button', { name: /Create/ }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/faas'));
-    expect(created.body?.envVars).toEqual([
-      { name: 'MY_VAR', source: 'value', value: 'my-value', resourceName: '', resourceKey: '' },
-    ]);
   });
 
   it('renders UserAvatar in header', () => {
@@ -184,7 +185,7 @@ describe('FunctionCreatePage', () => {
 
       it('submits the namespace typed immediately before clicking Create', async () => {
         const user = userEvent.setup();
-        const created = captureCreateRequest();
+        backendAccepting({ namespace: 'default' });
 
         renderPage();
         await fillForm(user);
@@ -193,7 +194,6 @@ describe('FunctionCreatePage', () => {
         await user.click(screen.getByRole('button', { name: /Create/ }));
 
         await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/faas'));
-        expect(created.body?.namespace).toBe('default');
       });
 
       it('warns when the typed namespace does not exist', async () => {
@@ -314,7 +314,7 @@ describe('FunctionCreatePage', () => {
       it('lets the user submit without touching the namespace field', async () => {
         const user = userEvent.setup();
         asDeveloperWithNamespaces('team-a');
-        const created = captureCreateRequest();
+        backendAccepting({ namespace: 'team-a' });
 
         renderPage();
         await user.type(screen.getByRole('textbox', { name: /Repository/ }), 'my-repo');
@@ -325,7 +325,6 @@ describe('FunctionCreatePage', () => {
         await user.click(create);
 
         await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/faas'));
-        expect(created.body?.namespace).toBe('team-a');
       });
     });
 
@@ -387,17 +386,24 @@ function setProjects(canCreate: boolean, names: string[]) {
   });
 }
 
-// Records what the page actually posted, so submit tests can assert on the payload rather
-// than on the form state they typed into.
-function captureCreateRequest() {
-  const captured: { body: CreateFunctionRequest | null } = { body: null };
+// Behaves like a backend that validates its input: it accepts the create request only when the
+// payload matches and rejects anything else. The page navigates away on success and shows an
+// alert on rejection, so the assertion stays on what the user sees.
+function backendAccepting(expected: Partial<CreateFunctionRequest> = {}) {
+  const keys = Object.keys(expected) as (keyof CreateFunctionRequest)[];
+
   server.use(
     http.post(`${BACKEND_API}/api/v1/func/create`, async ({ request }) => {
-      captured.body = (await request.json()) as CreateFunctionRequest;
+      const body = (await request.json()) as CreateFunctionRequest;
+      const matches = keys.every(
+        (key) => JSON.stringify(body[key]) === JSON.stringify(expected[key]),
+      );
+      if (!matches) {
+        return HttpResponse.json({ message: 'Unexpected payload' }, { status: 422 });
+      }
       return new HttpResponse(null, { status: 201 });
     }),
   );
-  return captured;
 }
 
 function renderPage() {
