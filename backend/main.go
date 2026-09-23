@@ -12,11 +12,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
+
+	"k8s.io/client-go/rest"
 
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/handler"
 	"github.com/openshift/faas-console-plugin/backend/scm"
 	"github.com/openshift/faas-console-plugin/backend/scm/github"
+	"github.com/openshift/faas-console-plugin/backend/session"
 	"github.com/openshift/faas-console-plugin/backend/tlsreload"
 )
 
@@ -69,8 +73,33 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Initialize session store using in-cluster or explicit config
+	// For dev: pass --kube-host; for production: auto-detect from pod env
+	var sessionStore session.SessionStore
+	if *kubeHost != "" {
+		// In dev mode, use memory store (no real K8s cluster available)
+		sessionStore = session.NewMemoryStore()
+		log.Printf("Using in-memory session store for development")
+	} else {
+		cfg, err := rest.InClusterConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
+		cfg.ContentConfig = rest.ContentConfig{ContentType: "application/json"}
+		cfg.Timeout = 30 * time.Second
+
+		store, err := session.NewStore(cfg)
+		if err != nil {
+			log.Fatal(err)
+		}
+		sessionStore = store
+	}
+	h.SetSessionStore(sessionStore)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
+	mux.HandleFunc("POST /api/v1/auth/login", h.HandleLogin)
+	mux.HandleFunc("POST /api/v1/auth/logout", h.HandleLogout)
 	mux.HandleFunc("GET /api/v1/auth/user", h.HandleGetUser)
 	mux.HandleFunc("GET /api/v1/func/list", h.HandleListFunctions)
 	mux.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
