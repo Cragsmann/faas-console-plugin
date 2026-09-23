@@ -51,9 +51,9 @@ type funcYamlFields struct {
 }
 
 func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
-	pat, ok := extractSCMToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "X-SCM-Token header is required")
+	credential, err := h.extractCredentialFromSession(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	ocpToken, ok := extractOCPToken(r)
@@ -84,7 +84,7 @@ func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		repoFunctions, repoErr = h.listRepoFunctions(r.Context(), pat, ocpToken, namespace)
+		repoFunctions, repoErr = h.listRepoFunctions(r.Context(), credential, ocpToken, namespace)
 	}()
 	go func() {
 		defer wg.Done()
