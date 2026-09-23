@@ -1,6 +1,5 @@
 import { AppError } from './errors';
 
-export const PAT_KEY = 'func-console-pat';
 export const USER_KEY = 'func-console-user';
 export const PROXY_BASE = '/api/proxy/plugin/console-functions-plugin/backend';
 
