@@ -1,6 +1,6 @@
 import { rm } from 'fs/promises';
 import * as path from 'path';
-import { resetFakeGithub, seedRepo } from './helpers/fakegithub';
+import { nodeFunctionFiles, resetFakeGithub, seedRepo } from './helpers/fakegithub';
 import { E2E_USER, PRESEEDED_FUNC_NAME, PRESEEDED_FUNC_NAMESPACE } from './helpers/constants';
 
 // Force a fresh login on every run to avoid stale CSRF tokens when switching clusters.
@@ -14,17 +14,6 @@ export default async function globalSetup() {
     PRESEEDED_FUNC_NAME,
     'main',
     ['serverless-function'],
-    [
-      {
-        path: 'func.yaml',
-        mode: '100644',
-        content: `name: ${PRESEEDED_FUNC_NAME}\nruntime: node\nnamespace: ${PRESEEDED_FUNC_NAMESPACE}\n`,
-      },
-      {
-        path: 'index.js',
-        mode: '100644',
-        content: 'module.exports = async (context) => context;',
-      },
-    ],
+    nodeFunctionFiles(PRESEEDED_FUNC_NAME, PRESEEDED_FUNC_NAMESPACE),
   );
 }

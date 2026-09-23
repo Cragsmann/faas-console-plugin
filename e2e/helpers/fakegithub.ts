@@ -35,10 +35,27 @@ export function clusterAPIURL(): string {
   return env.clusterAPIURL;
 }
 
-interface SeedFile {
+export interface SeedFile {
   path: string;
   mode: string;
   content: string;
+}
+
+// nodeFunctionFiles returns the standard func.yaml + handler seed for a Node
+// function, shared by every test that seeds a basic function repo.
+export function nodeFunctionFiles(name: string, namespace: string): SeedFile[] {
+  return [
+    {
+      path: 'func.yaml',
+      mode: '100644',
+      content: `name: ${name}\nruntime: node\nnamespace: ${namespace}\n`,
+    },
+    {
+      path: 'index.js',
+      mode: '100644',
+      content: 'module.exports = async (context) => context;',
+    },
+  ];
 }
 
 export async function seedRepo(
@@ -50,7 +67,12 @@ export async function seedRepo(
   variables?: Record<string, string>,
 ): Promise<void> {
   const url = fakeGithubUrl();
-  const mergedVariables = { CLUSTER_API_URL: clusterAPIURL(), ...variables };
+  const kubeconfigExpireAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const mergedVariables = {
+    CLUSTER_API_URL: clusterAPIURL(),
+    KUBECONFIG_EXPIRE_AT: kubeconfigExpireAt,
+    ...variables,
+  };
   const resp = await fetch(`${url}/_admin/seed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -61,6 +83,24 @@ export async function seedRepo(
       `Failed to seed repo ${owner}/${name} in fake GitHub: ${resp.status} ${await resp.text()}`,
     );
   }
+}
+
+export async function getRepoVariable(
+  owner: string,
+  name: string,
+  variable: string,
+): Promise<string> {
+  const url = fakeGithubUrl();
+  const resp = await fetch(`${url}/repos/${owner}/${name}/actions/variables/${variable}`, {
+    headers: { Authorization: `token ${FAKE_GH_PAT}` },
+  });
+  if (!resp.ok) {
+    throw new Error(
+      `Failed to read variable ${variable} for ${owner}/${name} in fake GitHub: ${resp.status} ${await resp.text()}`,
+    );
+  }
+  const body = (await resp.json()) as { name: string; value: string };
+  return body.value;
 }
 
 export async function resetFakeGithub(): Promise<void> {

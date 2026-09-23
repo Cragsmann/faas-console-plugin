@@ -102,6 +102,18 @@ export async function ensureSecret(
   });
 }
 
+export async function ensureServiceAccount(
+  page: Page,
+  namespace: string,
+  name: string,
+): Promise<void> {
+  await createResourceIfNotExists(page, `${K8S}/api/v1/namespaces/${namespace}/serviceaccounts`, {
+    apiVersion: 'v1',
+    kind: 'ServiceAccount',
+    metadata: { name, namespace },
+  });
+}
+
 export async function ensureConfigMap(
   page: Page,
   namespace: string,

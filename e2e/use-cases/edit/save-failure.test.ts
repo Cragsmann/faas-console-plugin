@@ -1,7 +1,7 @@
 import { test, expect } from '../../fixtures/authenticated-page';
 import { navigateToEditPage } from '../../helpers/navigation';
 import { E2E_USER, PRESEEDED_FUNC_NAME, PRESEEDED_FUNC_NAMESPACE } from '../../helpers/constants';
-import { deleteRepoOnFakeGithub, seedRepo } from '../../helpers/fakegithub';
+import { deleteRepoOnFakeGithub, nodeFunctionFiles, seedRepo } from '../../helpers/fakegithub';
 
 test.describe('Save failure', () => {
   test.afterEach(async () => {
@@ -10,18 +10,7 @@ test.describe('Save failure', () => {
       PRESEEDED_FUNC_NAME,
       'main',
       ['serverless-function'],
-      [
-        {
-          path: 'func.yaml',
-          mode: '100644',
-          content: `name: ${PRESEEDED_FUNC_NAME}\nruntime: node\nnamespace: ${PRESEEDED_FUNC_NAMESPACE}\n`,
-        },
-        {
-          path: 'index.js',
-          mode: '100644',
-          content: 'module.exports = async (context) => context;',
-        },
-      ],
+      nodeFunctionFiles(PRESEEDED_FUNC_NAME, PRESEEDED_FUNC_NAMESPACE),
     );
   });
 

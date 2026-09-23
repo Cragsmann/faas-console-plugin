@@ -353,7 +353,7 @@ test.describe('My feature', () => {
 
 Tests import `test` and `expect` from `e2e/fixtures/authenticated-page.ts`, not from `@playwright/test` directly. The fixture injects a placeholder PAT and user into sessionStorage before each test.
 
-The fake GitHub server (`e2e/helpers/fakegithub.ts`) provides helpers for seeding, resetting, and deleting repos. Shared constants live in `e2e/helpers/constants.ts`:
+The fake GitHub server (`e2e/helpers/fakegithub.ts`) provides helpers for seeding, resetting, and deleting repos, reading a repo Actions variable (`getRepoVariable`), and building the standard Node function seed files (`nodeFunctionFiles`). Shared constants live in `e2e/helpers/constants.ts`:
 
 - `PRESEEDED_FUNC_NAME` ('preseeded-test-func'): a seed repo, used by list, edit, and delete tests
 - `E2E_USER` ('e2e-user'): the test user identity
@@ -381,6 +381,7 @@ The fake GitHub server (`e2e/helpers/fakegithub.ts`) provides helpers for seedin
 | `ensureNamespace(page, name)` | Create namespace if it doesn't exist (waits for terminating namespaces) |
 | `ensureSecret(page, ns, name, data)` | Create a Secret if it doesn't exist (base64-encodes data values) |
 | `ensureConfigMap(page, ns, name, data)` | Create a ConfigMap if it doesn't exist |
+| `ensureServiceAccount(page, ns, name)` | Create a ServiceAccount if it doesn't exist |
 | `simulateGitHubActionsDeploy(page, name, ns)` | Create a ksvc and patch the deployment label to simulate `func deploy` |
 | `deleteFunction(page, name, namespace)` | Delete a function's ksvc and deployment from the cluster |
 | `ksvcApiPath(ns)` / `deploymentApiPath(ns)` | Build K8s API paths for Knative services and deployments |
