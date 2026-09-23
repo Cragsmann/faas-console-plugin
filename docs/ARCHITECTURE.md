@@ -114,6 +114,8 @@ Go + `net/http` standard library. Key dependencies:
 | `handler` | HTTP handlers: input validation, orchestration, error mapping |
 | `scm` | SCM abstraction types (`Platform`, `Registry`, `Client`) and filesystem helpers |
 | `scm/github` | go-github implementation of `scm.Client` |
+| `identity` | Who the caller is: turns the console-forwarded user token into an `identity.User` (username + UID) via `SelfSubjectReview`, with a short-lived cache |
+| `session` | Session credentials (GitHub PAT today, OAuth later) stored as Secrets in the backend's own namespace, each bound to the `identity.User` that created it |
 | `config` | Runtime configuration, package-level wiring vars (`SCMRegistry`), constants, and service account token expiry parsing |
 | `tlsreload` | Reloads the serving cert/key from disk on change (fsnotify plus a poll fallback), swapping an atomic `*tls.Certificate` via `GetCertificate` so rotated certs are served without a restart |
 
@@ -126,6 +128,8 @@ Go + `net/http` standard library. Key dependencies:
 - `scm` has no knowledge of cluster or functions
 - `functions` imports `scm` only for `scm.Platform` and `scm.FileEntry` types
 - `config` is imported by `handler`, `functions`, and `main` only; it owns runtime configuration and package-level wiring
+- `identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend, so `session` and `handler` can both depend on it without a cycle
+- `session` imports `identity` because a session is meaningless without the user it belongs to
 
 ### Key Decisions
 
@@ -151,6 +155,14 @@ The backend requests service account tokens with a configurable lifetime, set by
 
 **TLS serving certificate reloaded at runtime by an fsnotify + poll hybrid**
 The OCP service CA operator rotates the serving cert/key automatically. `tlsreload.Reloader` watches the mounted pair with fsnotify and atomically swaps the cached `*tls.Certificate` served via `tls.Config.GetCertificate`, so a rotation is picked up without restarting the pod. A poll ticker running every 30 seconds operates alongside the watcher as a safety net for events fsnotify can miss, in particular the atomic `..data` symlink swap Kubernetes uses for mounted secrets: when a watched file is removed or renamed the watch is re-added to the new file, and the poll guarantees the change is eventually observed regardless. Polling stays active during watcher setup failures and the 3-second watcher restart delays. Watcher events and poll ticks are processed on one goroutine, so `reload` and its content hash remain serialized and the swap needs only a plain atomic `Store` (no mutex). fsnotify was promoted from an existing indirect dependency; the heavier `k8s.io/apiserver/dynamiccertificates` and `controller-runtime/certwatcher` (which pulls in Prometheus) were avoided. Reloads are content-hashed to skip re-parsing when the pair is unchanged, and the last valid pair is retained when an update is incomplete or invalid.
+
+**Sessions are bound to an OpenShift user, checked on every read**
+
+A session token names a Secret holding a GitHub PAT, so on its own it is a bearer credential: whoever holds it holds the PAT. It is bound to the OpenShift user that created it, and redeeming it takes two secrets rather than one. `session.Store.GetCredential` takes the caller's `identity.User` as a parameter, so the check cannot be forgotten at a call site; a mismatch is an error, not a flag the caller inspects. There is no `SessionStore` interface: the store has one implementation, and handler tests run against a real `session.Store` over `k8s.io/client-go/kubernetes/fake` so the ownership and expiry rules they exercise are the ones that ship.
+
+The identity comes from the console proxy, which is declared `authorization: UserToken` and forwards the console user's bearer token in `Authorization`. That token is opaque, so `identity.Resolver` asks the API server who it belongs to with a `SelfSubjectReview` (the call behind `oc auth whoami`), which every authenticated user may create; reading `users.user.openshift.io` would need a `ClusterRole` the backend does not have. Answers are cached for five minutes, keyed by a SHA-256 of the token, so the lookup costs one round trip per console session rather than one per request.
+
+`identity.User` carries both the username and the UID. The UID is the authoritative key where it exists, since a username can be deleted and recreated for a different person while a UID is never reused, but `kube:admin` is backed by a static Secret rather than a `User` object and has none, so `Matches` compares both and falls back to the name alone when neither side has a UID. Two empty users never match, which keeps a session written without a binding from being readable by everybody.
 
 **SCM is abstracted behind a registry**
 `scm.Registry` maps `scm.Platform` → `scm.ClientFactory`. The active registry lives at `config.SCMRegistry`, a package-level var that tests swap out via `withSCMMock`. Handlers never reference a concrete SCM client type. The platform is currently resolved statically (`scm.DefaultPlatform = GitHub`), but the registry is designed to support dynamic platform selection — the handler can later derive the platform from the request body or header without changes to the registry or client implementations.

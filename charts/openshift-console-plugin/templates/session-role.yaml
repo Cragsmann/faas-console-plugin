@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ template "openshift-console-plugin.sessionName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "openshift-console-plugin.labels" . | nindent 4 }}
+rules:
+  # The backend keeps SCM credentials in Secrets rather than in the browser.
+  # Namespaced on purpose: sessions never leave the plugin's own namespace.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "delete"]

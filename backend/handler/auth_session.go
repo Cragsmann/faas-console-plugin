@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -14,17 +15,25 @@ import (
 // Request: { "pat": "ghp_..." }
 // Response: 201 { "token": "...", "login": "...", "avatarUrl": "..." }
 // The caller sends the token back in the X-FUNC-SESSION header;
-// the PAT itself stays on the backend.
+// the PAT itself stays on the backend. The session is bound to the OpenShift
+// user that created it.
 func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
+	ocpUser, err := h.currentUser(r)
+	if err != nil {
+		slog.Warn("login without a resolvable OpenShift user", "err", err)
+		writeError(w, http.StatusUnauthorized, "openshift authentication required")
+		return
+	}
+
 	var req struct {
 		PAT string `json:"pat"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -46,8 +55,7 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create session in cluster using GitHub username as owner
-	token, err := h.sessionStore.CreateSession(r.Context(), user.Login, req.PAT, session.CredentialTypePAT)
+	token, err := h.sessionStore.CreateSession(r.Context(), ocpUser, user.Login, req.PAT, session.CredentialTypePAT)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create session")
 		return
@@ -60,10 +68,6 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleLogout revokes the session, deleting the stored credential.
-// POST /api/v1/auth/logout
-// Response: 204. Unknown or already-deleted sessions also return 204 so the
-// caller can clear its local state without special-casing the response.
 func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get(sessionHeader)
 	if token == "" {

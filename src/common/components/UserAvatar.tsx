@@ -1,5 +1,6 @@
 import {
   Alert,
+  Avatar,
   Button,
   Divider,
   Dropdown,
@@ -21,7 +22,7 @@ import {
   TextInput,
   Tooltip,
 } from '@patternfly/react-core';
-import { GithubIcon, KeyIcon, UserIcon } from '@patternfly/react-icons';
+import { GithubIcon, UserIcon } from '@patternfly/react-icons';
 import { Ref, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AuthContext } from '../context/AuthProvider';
@@ -38,14 +39,14 @@ export function UserAvatar({ enableReconnect }: UserAvatarProps) {
     useUserAvatar(enableReconnect);
 
   if (isConnected) {
-    return <ConnectedMenu name={user.name} onDisconnect={disconnect} />;
+    return <ConnectedMenu name={user.name} avatarUrl={user.avatarUrl} onDisconnect={disconnect} />;
   }
 
   return (
     <>
       <Button
         variant="link"
-        icon={<KeyIcon />}
+        icon={<GithubIcon />}
         onClick={enableReconnect ? openModal : undefined}
         isDisabled={!enableReconnect}
         style={!enableReconnect ? { cursor: 'default' } : undefined}
@@ -86,12 +87,19 @@ function useUserAvatar(enableReconnect: boolean) {
 
 interface ConnectedMenuProps {
   name: string;
+  avatarUrl: string;
   onDisconnect: () => Promise<void>;
 }
 
-function ConnectedMenu({ name, onDisconnect }: ConnectedMenuProps) {
+function ConnectedMenu({ name, avatarUrl, onDisconnect }: ConnectedMenuProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
   const [isOpen, setIsOpen] = useState(false);
+
+  const toggleIcon = avatarUrl ? (
+    <Avatar src={avatarUrl} alt="" size="sm" data-test="user-avatar" />
+  ) : (
+    <UserIcon />
+  );
 
   return (
     <Dropdown
@@ -103,7 +111,7 @@ function ConnectedMenu({ name, onDisconnect }: ConnectedMenuProps) {
         <MenuToggle
           ref={toggleRef}
           variant="plainText"
-          icon={<UserIcon />}
+          icon={toggleIcon}
           isExpanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
           data-test="user-menu-toggle"
@@ -113,7 +121,18 @@ function ConnectedMenu({ name, onDisconnect }: ConnectedMenuProps) {
       )}
     >
       <DropdownList>
-        <DropdownItem value="disconnect" onClick={onDisconnect} data-test="disconnect-item">
+        <DropdownItem
+          value="github"
+          onClick={() => window.open(`https://github.com/${name}?tab=repositories`, '_blank')}
+        >
+          {t('Go to GitHub')}
+        </DropdownItem>
+        <DropdownItem
+          value="disconnect"
+          onClick={onDisconnect}
+
+          isDanger
+        >
           {t('Disconnect')}
         </DropdownItem>
       </DropdownList>

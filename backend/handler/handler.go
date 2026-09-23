@@ -8,15 +8,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/openshift/faas-console-plugin/backend/identity"
 	"github.com/openshift/faas-console-plugin/backend/session"
 )
 
 type Handlers struct {
-	caCert               []byte               // cluster CA certificate, read once at startup
-	kubeHost             string               // API server URL for dev/test; empty uses in-cluster config
-	externalAPIServerURL string               // external URL embedded in generated kubeconfigs
-	saTokenExpiry        int64                // requested SA token lifetime in seconds
-	sessionStore         session.SessionStore // session token to PAT mapping
+	caCert               []byte            // cluster CA certificate, read once at startup
+	kubeHost             string            // API server URL for dev/test; empty uses in-cluster config
+	externalAPIServerURL string            // external URL embedded in generated kubeconfigs
+	saTokenExpiry        int64             // requested SA token lifetime in seconds
+	sessionStore         *session.Store    // session token to PAT mapping
+	identityResolver     identity.Resolver // OCP user behind the console's bearer token
 }
 
 type httpError struct {
@@ -37,7 +39,7 @@ func newHTTPError(code int, message string, cause error) error {
 	return &httpError{code: code, message: message, cause: cause}
 }
 
-func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64) (*Handlers, error) {
+func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64, sessionStore *session.Store) (*Handlers, error) {
 	var caCert []byte
 	if caPath != "" {
 		var err error
@@ -46,41 +48,49 @@ func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64) (*H
 			return nil, fmt.Errorf("read CA certificate %q: %w", caPath, err)
 		}
 	}
-
-	return &Handlers{caCert: caCert, kubeHost: kubeHost, externalAPIServerURL: externalAPIServerURL, saTokenExpiry: saTokenExpiry}, nil
+	return &Handlers{
+		caCert:               caCert,
+		kubeHost:             kubeHost,
+		externalAPIServerURL: externalAPIServerURL,
+		saTokenExpiry:        saTokenExpiry,
+		sessionStore:         sessionStore,
+		identityResolver:     identity.NewResolver(kubeHost, caCert),
+	}, nil
 }
 
-func (h *Handlers) SetSessionStore(store session.SessionStore) {
-	h.sessionStore = store
-}
-
-// sessionHeader carries the session token issued by HandleLogin.
 const sessionHeader = "X-FUNC-SESSION"
 
-func extractSCMToken(r *http.Request) (string, bool) {
-	v := r.Header.Get("X-SCM-Token")
-	return v, v != ""
-}
-
-// extractCredentialFromSession retrieves the stored credential (PAT or OAuth token) from the session.
-// Falls back to X-SCM-Token header for backward compatibility during migration.
 func (h *Handlers) extractCredentialFromSession(r *http.Request) (string, error) {
 	// Deliberately not Authorization: that header carries the OCP user token
 	// forwarded by the console proxy (see extractOCPToken).
-	if token := r.Header.Get(sessionHeader); token != "" {
-		credential, _, _, err := h.sessionStore.GetCredential(r.Context(), token)
-		if err != nil {
-			return "", fmt.Errorf("invalid or expired session: %w", err)
-		}
-		return credential, nil
+	token := r.Header.Get(sessionHeader)
+	if token == "" {
+		return "", fmt.Errorf("no %s header", sessionHeader)
 	}
 
-	// Fallback to old header for backward compatibility during migration
-	pat, ok := extractSCMToken(r)
-	if !ok {
-		return "", fmt.Errorf("no session token or X-SCM-Token header")
+	user, err := h.currentUser(r)
+	if err != nil {
+		return "", err
 	}
-	return pat, nil
+
+	credential, err := h.sessionStore.GetCredential(r.Context(), token, user)
+	if err != nil {
+		return "", fmt.Errorf("invalid or expired session: %w", err)
+	}
+	return credential, nil
+}
+
+func (h *Handlers) currentUser(r *http.Request) (identity.User, error) {
+	ocpToken, ok := extractOCPToken(r)
+	if !ok {
+		return identity.User{}, fmt.Errorf("no OpenShift user token")
+	}
+
+	user, err := h.identityResolver.Resolve(r.Context(), ocpToken)
+	if err != nil {
+		return identity.User{}, fmt.Errorf("resolve OpenShift user: %w", err)
+	}
+	return user, nil
 }
 
 func extractOCPToken(r *http.Request) (string, bool) {
@@ -102,8 +112,4 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"message": msg})
-}
-
-func decodeJSON(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
 }

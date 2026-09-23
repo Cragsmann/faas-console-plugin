@@ -22,9 +22,9 @@ var _ = Describe("GET /api/v1/auth/user", func() {
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user", nil)
-		req.Header.Set("X-SCM-Token", "valid-pat")
+		authenticate(req)
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleGetUser(w, req)
+		(testHandlers(Handlers{})).HandleGetUser(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var resp scm.User
@@ -41,17 +41,35 @@ var _ = Describe("GET /api/v1/auth/user", func() {
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user", nil)
-		req.Header.Set("X-SCM-Token", "bad-token")
+		authenticate(req)
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleGetUser(w, req)
+		(testHandlers(Handlers{})).HandleGetUser(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
 
-	It("rejects requests without an X-SCM-Token header", func() {
+	It("rejects requests without a session header", func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user", nil)
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleGetUser(w, req)
+		(testHandlers(Handlers{})).HandleGetUser(w, req)
+
+		Expect(w.Code).To(Equal(http.StatusUnauthorized))
+	})
+
+	It("rejects an unknown or expired session token", func() {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user", nil)
+		req.Header.Set(sessionHeader, "expired-session")
+		w := httptest.NewRecorder()
+		(testHandlers(Handlers{})).HandleGetUser(w, req)
+
+		Expect(w.Code).To(Equal(http.StatusUnauthorized))
+	})
+
+	It("does not accept the retired X-SCM-Token header", func() {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user", nil)
+		req.Header.Set("X-SCM-Token", "ghp_raw_pat")
+		w := httptest.NewRecorder()
+		(testHandlers(Handlers{})).HandleGetUser(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
@@ -64,9 +82,9 @@ var _ = Describe("GET /api/v1/auth/user", func() {
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/user", nil)
-		req.Header.Set("X-SCM-Token", "some-token")
+		authenticate(req)
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleGetUser(w, req)
+		(testHandlers(Handlers{})).HandleGetUser(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadGateway))
 	})
