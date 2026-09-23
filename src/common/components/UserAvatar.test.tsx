@@ -93,6 +93,27 @@ describe('UserAvatar', () => {
       expect(screen.getByText('twoGiants')).toBeInTheDocument();
     });
 
+    it('renders the GitHub avatar when the user has one', () => {
+      const avatarUrl = 'https://avatars.githubusercontent.com/u/1?v=4';
+      renderWithContext(
+        <UserAvatar enableReconnect />,
+        connectedContext({ user: { name: 'twoGiants', avatarUrl } }),
+      );
+
+      const avatar = document.querySelector('[data-test="user-avatar"]');
+      expect(avatar).toHaveAttribute('src', avatarUrl);
+      // The login is already rendered next to the image, so the avatar stays
+      // out of the accessibility tree rather than repeating it.
+      expect(avatar).toHaveAttribute('alt', '');
+    });
+
+    it('falls back to the generic icon when there is no avatar URL', () => {
+      renderWithContext(<UserAvatar enableReconnect />, connectedContext());
+
+      expect(document.querySelector('[data-test="user-avatar"]')).not.toBeInTheDocument();
+      expect(screen.getByText('twoGiants')).toBeInTheDocument();
+    });
+
     it('button is disabled when enableReconnect is false', async () => {
       const user = userEvent.setup();
 
