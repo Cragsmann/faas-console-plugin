@@ -26,7 +26,7 @@ import { GithubIcon, UserIcon } from '@patternfly/react-icons';
 import { Ref, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AuthContext } from '../context/AuthProvider';
-import { useSessionService } from '../services/session/useSessionService';
+import { isSessionActive, login as sessionLogin } from '../clients/sessionClient';
 import { errorMessage } from '../utils/utils';
 
 interface UserAvatarProps {
@@ -59,14 +59,11 @@ export function UserAvatar({ enableReconnect }: UserAvatarProps) {
 }
 
 function useUserAvatar(enableReconnect: boolean) {
-  const sessionService = useSessionService();
   const { user, isAuthenticated, onLogin, onLogout } = useContext(AuthContext);
-  const [isModalOpen, setIsModalOpen] = useState(
-    () => enableReconnect && !sessionService.isSessionActive(),
-  );
+  const [isModalOpen, setIsModalOpen] = useState(() => enableReconnect && !isSessionActive());
 
   const login = async (pat: string) => {
-    const authUser = await sessionService.login(pat);
+    const authUser = await sessionLogin(pat);
     setIsModalOpen(false);
     onLogin(authUser);
   };
@@ -127,12 +124,7 @@ function ConnectedMenu({ name, avatarUrl, onDisconnect }: ConnectedMenuProps) {
         >
           {t('Go to GitHub')}
         </DropdownItem>
-        <DropdownItem
-          value="disconnect"
-          onClick={onDisconnect}
-
-          isDanger
-        >
+        <DropdownItem value="disconnect" onClick={onDisconnect} isDanger>
           {t('Disconnect')}
         </DropdownItem>
       </DropdownList>

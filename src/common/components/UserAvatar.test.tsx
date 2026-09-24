@@ -2,8 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 import { UserAvatar } from './UserAvatar';
-import { USER_KEY } from '../types';
-import { SESSION_TOKEN_KEY } from '../services/session/SessionService';
+import { SESSION_TOKEN_KEY, USER_KEY } from '../types';
 import { AuthContext } from '../context/AuthProvider';
 import { ReactNode } from 'react';
 import { authenticateGithubFake, logoutGithubFake } from '../testing/authFake';
@@ -62,6 +61,11 @@ function authContext(overrides = {}) {
 
 function renderWithContext(ui: ReactNode, contextValue = authContext()) {
   return render(<AuthContext.Provider value={contextValue}>{ui}</AuthContext.Provider>);
+}
+
+/** Everything sessionStorage holds, for asserting on what is not in it. */
+function storedValues(): (string | null)[] {
+  return Object.keys(sessionStorage).map((key) => sessionStorage.getItem(key));
 }
 
 /** Puts the component in the connected state: authenticated context plus a stored session. */
@@ -222,7 +226,7 @@ describe('UserAvatar', () => {
 
       expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_new');
       expect(JSON.parse(sessionStorage.getItem(USER_KEY)!)).toEqual(testUser);
-      expect(sessionStorage.getItem('func-console-pat')).toBeNull();
+      expect(storedValues()).not.toContain('ghp_valid');
     });
 
     it('sends the PAT to the backend rather than to GitHub', async () => {

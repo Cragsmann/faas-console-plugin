@@ -1,7 +1,6 @@
 import { createContext, ReactNode, useCallback, useEffect, useState } from 'react';
-import { SESSION_EXPIRED_EVENT } from '../services/session/SessionService';
-import { useSessionService } from '../services/session/useSessionService';
-import { AuthUser, USER_KEY } from '../types';
+import { isSessionActive, logout, resumeSession } from '../clients/sessionClient';
+import { AuthUser, SESSION_EXPIRED_EVENT, USER_KEY } from '../types';
 
 const NO_USER: AuthUser = { name: '', avatarUrl: '' };
 
@@ -22,10 +21,7 @@ export const AuthContext = createContext<AuthState>({
 });
 
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
-  const sessionService = useSessionService();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() =>
-    sessionService.isSessionActive(),
-  );
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(isSessionActive);
   const [user, setUser] = useState<AuthUser>(readStoredUser);
   const [connectionId, setConnectionId] = useState(0);
 
@@ -38,15 +34,30 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const clearAuth = useCallback(() => {
     setUser(NO_USER);
     setIsAuthenticated(false);
+    setConnectionId((id) => id + 1);
   }, []);
 
-  const onLogout = useCallback(async () => {
-    await sessionService.logout();
+  const onLogout = async () => {
+    await logout();
     clearAuth();
-  }, [sessionService, clearAuth]);
+  };
 
-  // A 401 on any backend call means the session is gone server-side; drop the
-  // local state so the UI falls back to the connect prompt.
+  // Authenticate the user if they have a session token stored in BE but not in the browser.
+  useEffect(() => {
+    if (isSessionActive()) return;
+    let cancelled = false;
+    resumeSession()
+      .then((resumed) => {
+        if (resumed && !cancelled) onLogin(resumed);
+      })
+      .catch(() => {
+        // stay disconnected
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     window.addEventListener(SESSION_EXPIRED_EVENT, clearAuth);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, clearAuth);
