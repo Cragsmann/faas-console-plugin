@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router';
-import { authenticateGithubFake, logoutGithubFake } from '../../common/testing/authFake';
+import { authenticateGithubFake, logoutGithubFake, logoutStub } from '../../common/testing/authFake';
 import {
   listFunctionsStub,
   receiveWorkflowRunEventsStub,
@@ -125,6 +125,26 @@ describe('FunctionsListPage', () => {
 
       expect(await screen.findByRole('button', { name: 'View setup guide.' })).toBeInTheDocument();
     });
+  });
+
+  it('clears the listed functions when the user disconnects', async () => {
+    listFunctionsStub({ responses: [functionMetadata({ repoName: funcName })] });
+    sdkTestDoubles.setWatchFixtures(sdkTestDoubles.funcFixture(funcName));
+    logoutStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(funcName)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'twoGiants' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Disconnect' }));
+
+    await waitFor(() => expect(screen.queryByText(funcName)).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Connect to GitHub' })).toBeInTheDocument();
   });
 
   describe('Auth and general error', () => {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -60,30 +61,44 @@ func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64, ses
 
 const sessionHeader = "X-FUNC-SESSION"
 
-func (h *Handlers) extractCredentialFromSession(r *http.Request) (string, error) {
+// errNoSessionToken means the request carried no session handle at all, which
+// is the caller's problem rather than a sign anything is wrong here.
+var errNoSessionToken = errors.New("no session token in the request")
+
+func (h *Handlers) extractCredentialFromSession(r *http.Request) (session.Credential, error) {
 	// Deliberately not Authorization: that header carries the OCP user token
 	// forwarded by the console proxy (see extractOCPToken).
 	token := r.Header.Get(sessionHeader)
 	if token == "" {
-		return "", fmt.Errorf("no %s header", sessionHeader)
+		return session.Credential{}, fmt.Errorf("%w: no %s header", errNoSessionToken, sessionHeader)
 	}
 
 	user, err := h.currentUser(r)
 	if err != nil {
-		return "", err
+		return session.Credential{}, err
 	}
 
-	credential, err := h.sessionStore.GetCredential(r.Context(), token, user)
-	if err != nil {
-		return "", fmt.Errorf("invalid or expired session: %w", err)
+	return h.sessionStore.GetCredential(r.Context(), token, user)
+}
+
+func writeSessionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errNoSessionToken),
+		errors.Is(err, identity.ErrUnauthenticated),
+		errors.Is(err, session.ErrInvalidSession),
+		errors.Is(err, session.ErrNoCredential):
+		slog.Warn("rejecting request without a usable session", "err", err)
+		writeError(w, http.StatusUnauthorized, "authentication required")
+	default:
+		slog.Error("could not resolve the caller's session", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "session store unavailable")
 	}
-	return credential, nil
 }
 
 func (h *Handlers) currentUser(r *http.Request) (identity.User, error) {
 	ocpToken, ok := extractOCPToken(r)
 	if !ok {
-		return identity.User{}, fmt.Errorf("no OpenShift user token")
+		return identity.User{}, fmt.Errorf("%w: no OpenShift user token", identity.ErrUnauthenticated)
 	}
 
 	user, err := h.identityResolver.Resolve(r.Context(), ocpToken)

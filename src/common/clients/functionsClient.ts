@@ -1,6 +1,6 @@
-import { consoleFetch, isAllNamespacesKey } from '@openshift-console/dynamic-plugin-sdk';
+import { isAllNamespacesKey } from '@openshift-console/dynamic-plugin-sdk';
 import { AppError, HttpError } from '../errors';
-import { sessionFetch, sessionFetchJSON } from '../services/session/sessionFetch';
+import { sessionFetch, sessionFetchJSON } from './sessionClient';
 import { createSSEEventSource } from '../transport/sseEventSource';
 import {
   CreateFunctionRequest,
@@ -72,8 +72,7 @@ export function receiveWorkflowRunEvents(
   errorCbk: (message: string) => void,
 ): () => void {
   const es = createSSEEventSource(`${PROXY_BASE}/api/v1/func/workflow-run/watch`, {
-    headers: scmHeaders(),
-    fetchFn: consoleFetch,
+    fetchFn: sessionFetch,
   });
 
   es.addEventListener('workflow-run-status', (e) => {
