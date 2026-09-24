@@ -7,29 +7,25 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/openshift/faas-console-plugin/backend/kube"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
-// User is the OpenShift user the API server sees behind a bearer token.
+var ErrUnauthenticated = errors.New("bearer token not accepted")
+
 type User struct {
 	Username string `json:"username"`
 	UID      string `json:"uid,omitempty"`
 }
 
-// Matches reports whether u and other are the same OpenShift user.
-//
-// The UID is the authoritative key where it exists: a username can be deleted
-// and recreated for a different person, a UID is never reused. kube:admin is
-// backed by a static Secret rather than a User object and therefore has no UID,
-// so for it the comparison falls back to the name. Two empty users never match,
-// which keeps an unbound session from being readable by everybody.
 func (u User) Matches(other User) bool {
 	if u.UID != "" || other.UID != "" {
 		return u.UID == other.UID && u.Username == other.Username
@@ -42,16 +38,9 @@ type Resolver interface {
 	Resolve(ctx context.Context, token string) (User, error)
 }
 
-// cacheTTL bounds how long a token-to-user answer is reused. Without it every
-// backend call would cost one extra API server round trip just to learn the
-// caller's name. Console tokens outlive this by hours, so the window only
-// delays noticing a revoked token, which the API server rejects anyway on the
-// next call the handler makes with it.
-const cacheTTL = 5 * time.Minute
+// users OCP identity is cached for 1 hour
+const cacheTTL = time.Hour
 
-// NewResolver builds a resolver backed by SelfSubjectReview, the same call
-// `oc auth whoami` makes. Every authenticated user may create one. host is
-// empty in the pod, where the in-cluster config supplies the address.
 func NewResolver(host string, caCert []byte) Resolver {
 	return &reviewResolver{host: host, caCert: caCert, entries: map[string]cacheEntry{}}
 }
@@ -71,7 +60,7 @@ type cacheEntry struct {
 
 func (r *reviewResolver) Resolve(ctx context.Context, token string) (User, error) {
 	if token == "" {
-		return User{}, fmt.Errorf("no bearer token")
+		return User{}, fmt.Errorf("%w: no bearer token", ErrUnauthenticated)
 	}
 
 	key := cacheKey(token)
@@ -90,12 +79,17 @@ func (r *reviewResolver) Resolve(ctx context.Context, token string) (User, error
 
 	review, err := client.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 	if err != nil {
+		// A refused token and an unreachable API server both fail here, and only
+		// the first one means the caller should be logged out.
+		if apierrors.IsUnauthorized(err) || apierrors.IsForbidden(err) {
+			return User{}, fmt.Errorf("%w: %v", ErrUnauthenticated, err)
+		}
 		return User{}, fmt.Errorf("self subject review: %w", err)
 	}
 
 	user := User{Username: review.Status.UserInfo.Username, UID: review.Status.UserInfo.UID}
 	if user.Username == "" {
-		return User{}, fmt.Errorf("self subject review returned no username")
+		return User{}, fmt.Errorf("%w: self subject review returned no username", ErrUnauthenticated)
 	}
 
 	r.store(key, user)
@@ -124,8 +118,7 @@ func (r *reviewResolver) store(key string, user User) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Nothing ever removes an entry explicitly, so drop the stale ones here or
-	// the map grows with every console session the backend has ever seen.
+	// Nothing ever removes an entry explicitly, so drop the stale ones here
 	now := time.Now()
 	for k, entry := range r.entries {
 		if now.After(entry.expiresAt) {
