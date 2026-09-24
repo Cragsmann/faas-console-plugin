@@ -298,6 +298,16 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
 
+	It("returns 401 for an unknown or expired session token", func() {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/list", nil)
+		authenticate(req)
+		req.Header.Set(sessionHeader, "expired-session")
+		w := httptest.NewRecorder()
+		(testHandlers(Handlers{})).HandleListFunctions(w, req)
+
+		Expect(w.Code).To(Equal(http.StatusUnauthorized))
+	})
+
 	It("excludes repos whose CLUSTER_API_URL variable points to a different cluster", func() {
 		withSCMStub(&scm.ClientStub{
 			OnListRepos: func(ctx context.Context) ([]scm.Repo, error) {

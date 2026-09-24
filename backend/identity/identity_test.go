@@ -1,95 +1,101 @@
 package identity
 
-import "testing"
+import (
+	"context"
+	"time"
 
-func TestUserMatches(t *testing.T) {
-	tests := []struct {
-		name  string
-		a, b  User
-		match bool
-	}{
-		{
-			name:  "same username and uid",
-			a:     User{Username: "alice", UID: "uid-1"},
-			b:     User{Username: "alice", UID: "uid-1"},
-			match: true,
-		},
-		{
-			// kube:admin is backed by a static Secret, not a User object, so
-			// the API server reports no UID for it.
-			name:  "same username, neither has a uid",
-			a:     User{Username: "kube:admin"},
-			b:     User{Username: "kube:admin"},
-			match: true,
-		},
-		{
-			// A deleted and recreated account keeps the name but gets a fresh
-			// UID, and must not inherit the old user's sessions.
-			name:  "same username, different uid",
-			a:     User{Username: "alice", UID: "uid-1"},
-			b:     User{Username: "alice", UID: "uid-2"},
-			match: false,
-		},
-		{
-			name:  "different username, same uid",
-			a:     User{Username: "alice", UID: "uid-1"},
-			b:     User{Username: "mallory", UID: "uid-1"},
-			match: false,
-		},
-		{
-			name:  "uid known on one side only",
-			a:     User{Username: "alice", UID: "uid-1"},
-			b:     User{Username: "alice"},
-			match: false,
-		},
-		{
-			// Guards sessions written before the binding existed: an empty
-			// stored user must not match an empty caller.
-			name:  "both empty",
-			a:     User{},
-			b:     User{},
-			match: false,
-		},
-		{
-			name:  "empty against a real user",
-			a:     User{},
-			b:     User{Username: "alice", UID: "uid-1"},
-			match: false,
-		},
-	}
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.a.Matches(tc.b); got != tc.match {
-				t.Errorf("%+v.Matches(%+v) = %v, want %v", tc.a, tc.b, got, tc.match)
-			}
-			if got := tc.b.Matches(tc.a); got != tc.match {
-				t.Errorf("Matches should be symmetric: %+v.Matches(%+v) = %v, want %v", tc.b, tc.a, got, tc.match)
-			}
-		})
-	}
-}
+var _ = Describe("User.Matches", func() {
+	// Asserted in both directions: a binding check that held one way round but
+	// not the other would be a hole rather than a quirk.
+	DescribeTable("comparing two identities",
+		func(a, b User, match bool) {
+			Expect(a.Matches(b)).To(Equal(match))
+			Expect(b.Matches(a)).To(Equal(match), "Matches should be symmetric")
+		},
+		Entry("same username and uid",
+			User{Username: "alice", UID: "uid-1"}, User{Username: "alice", UID: "uid-1"}, true),
+		// kube:admin is backed by a static Secret, not a User object, so the API
+		// server reports no UID for it.
+		Entry("same username, neither has a uid",
+			User{Username: "kube:admin"}, User{Username: "kube:admin"}, true),
+		// A deleted and recreated account keeps the name but gets a fresh UID,
+		// and must not inherit the old user's sessions.
+		Entry("same username, different uid",
+			User{Username: "alice", UID: "uid-1"}, User{Username: "alice", UID: "uid-2"}, false),
+		Entry("different username, same uid",
+			User{Username: "alice", UID: "uid-1"}, User{Username: "mallory", UID: "uid-1"}, false),
+		Entry("uid known on one side only",
+			User{Username: "alice", UID: "uid-1"}, User{Username: "alice"}, false),
+		// Guards sessions written before the binding existed: an empty stored
+		// user must not match an empty caller.
+		Entry("both empty", User{}, User{}, false),
+		Entry("empty against a real user",
+			User{}, User{Username: "alice", UID: "uid-1"}, false),
+	)
+})
 
-func TestResolveRejectsEmptyToken(t *testing.T) {
-	resolver := NewResolver("https://api.example.com:6443", nil)
+var _ = Describe("Resolve", func() {
+	It("rejects an empty token instead of calling the API server", func() {
+		resolver := NewResolver("https://api.example.com:6443", nil)
 
-	if _, err := resolver.Resolve(t.Context(), ""); err == nil {
-		t.Error("Resolve should reject an empty token instead of calling the API server")
-	}
-}
+		_, err := resolver.Resolve(context.Background(), "")
+		Expect(err).To(MatchError(ErrUnauthenticated))
+	})
 
-func TestCacheKeyHidesTheToken(t *testing.T) {
+	// A cached answer must be served without a second API server call, and must
+	// stop being served once it expires. Asserted against the map directly: the
+	// resolver has no seam for faking SelfSubjectReview, so a live call is the
+	// only alternative and there is no cluster in a unit test.
+	It("serves cached answers until they expire", func() {
+		r := &reviewResolver{entries: map[string]cacheEntry{}}
+		const token = "sha256~console-token"
+		alice := User{Username: "alice", UID: "uid-1"}
+
+		r.store(cacheKey(token), alice)
+
+		user, err := r.Resolve(context.Background(), token)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(user).To(Equal(alice))
+
+		// Past the TTL the entry is ignored, so Resolve falls through to the API
+		// server and fails for want of one rather than serving the stale answer.
+		r.entries[cacheKey(token)] = cacheEntry{user: alice, expiresAt: time.Now().Add(-time.Second)}
+		_, err = r.Resolve(context.Background(), token)
+		Expect(err).To(HaveOccurred(), "Resolve should not serve an expired entry")
+	})
+})
+
+var _ = Describe("cacheKey", func() {
 	const token = "sha256~secret-console-token"
 
-	key := cacheKey(token)
+	It("hides the token", func() {
+		Expect(cacheKey(token)).NotTo(Equal(token))
+	})
 
-	if key == token {
-		t.Error("cache key should be a hash, not the token itself")
-	}
-	if key != cacheKey(token) {
-		t.Error("cache key should be stable for the same token")
-	}
-	if key == cacheKey(token+"x") {
-		t.Error("different tokens should produce different cache keys")
-	}
-}
+	It("is stable for the same token", func() {
+		Expect(cacheKey(token)).To(Equal(cacheKey(token)))
+	})
+
+	It("differs for different tokens", func() {
+		Expect(cacheKey(token)).NotTo(Equal(cacheKey(token + "x")))
+	})
+})
+
+// Expired entries are dropped on write, or the map grows with every console
+// token the backend has ever seen.
+var _ = Describe("store", func() {
+	It("prunes expired entries and keeps the new one", func() {
+		r := &reviewResolver{entries: map[string]cacheEntry{
+			"stale": {user: User{Username: "bob"}, expiresAt: time.Now().Add(-time.Second)},
+		}}
+
+		r.store("fresh", User{Username: "alice"})
+
+		Expect(r.entries).NotTo(HaveKey("stale"))
+		Expect(r.entries).To(HaveKey("fresh"))
+	})
+})

@@ -1,13 +1,7 @@
 import { isAllNamespacesKey } from '@openshift-console/dynamic-plugin-sdk';
-import { sessionFetch, sessionFetchJSON } from '../services/session/sessionFetch';
+import { sessionFetch, sessionFetchJSON } from './sessionClient';
 import { CreateFunctionRequest, FileEntry, FunctionListItem, PROXY_BASE } from '../types';
 
-/**
- * listFunctions returns a list of function metadata.
- *
- * Test doubles for this function are in src/common/testing/functionsClientStub.ts
- *
- */
 export async function listFunctions(namespace: string): Promise<FunctionListItem[]> {
   const query = isAllNamespacesKey(namespace)
     ? '?all=true'

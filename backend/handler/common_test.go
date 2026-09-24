@@ -42,7 +42,11 @@ func init() {
 	client := fake.NewClientset()
 	store := session.NewStoreWithClient(client, testNamespace)
 
-	token, err := store.CreateSession(context.Background(), testOCPUser, "tester", "test-pat", session.CredentialTypePAT)
+	token, err := store.CreateSession(context.Background(), testOCPUser, session.Credential{
+		Owner:  "tester",
+		Secret: "test-pat",
+		Type:   session.CredentialTypePAT,
+	})
 	if err != nil {
 		panic(fmt.Sprintf("seed test session: %v", err))
 	}
