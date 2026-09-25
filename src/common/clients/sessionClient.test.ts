@@ -14,20 +14,12 @@ function sentHeaders(options: RequestInit | undefined) {
   return options?.headers as Record<string, string>;
 }
 
-/**
- * The error the console's coFetch throws: the code is reachable only through
- * the Response it attaches, never as a property of its own.
- */
 function coFetchError(status: number, message = 'request failed') {
   return Object.assign(new Error(message), { response: new Response(null, { status }) });
 }
-
-/** The SDK's HttpError, which copies the code onto the error as well. */
 function httpError(status: number, message = 'request failed') {
   return Object.assign(new Error(message), { status, response: new Response(null, { status }) });
 }
-
-/** The backend still holds the credential and hands out a fresh token for it. */
 function reissues(token: string) {
   vi.mocked(consoleFetchJSON.post).mockResolvedValue({
     token,
@@ -35,20 +27,14 @@ function reissues(token: string) {
     avatarUrl: 'https://example.com/avatar',
   });
 }
-
-/** The backend has nothing to reissue from: 404, not 401. */
 function noStoredCredential() {
   vi.mocked(consoleFetchJSON.post).mockRejectedValue(coFetchError(404, 'no stored credential'));
 }
-
-/** The backend could not say whether a credential is there at all. */
 function reissueUnavailable() {
   vi.mocked(consoleFetchJSON.post).mockRejectedValue(
     coFetchError(503, 'session store unavailable'),
   );
 }
-
-/** Records SESSION_EXPIRED_EVENT for the length of the spec that calls it. */
 function watchForExpiry() {
   const onExpired = vi.fn();
   window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
@@ -73,9 +59,6 @@ describe('sessionFetch', () => {
     expect(sentHeaders(options)[SESSION_HEADER.toLowerCase()]).toBe('sess_test');
   });
 
-  // The SDK merges options.headers with lodash defaultsDeep, which copies own
-  // enumerable properties only. A Headers instance has none, so passing one
-  // drops every header and the backend answers 401.
   it('passes headers as a plain object, not a Headers instance', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
 
@@ -130,8 +113,6 @@ describe('sessionFetch', () => {
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
   });
 
-  // The session token expires long before the credential behind it does, so an
-  // expiry the backend can repair must not cost the user their connection.
   it('reissues the session and retries once after a 401', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
     fetchMock
@@ -147,8 +128,6 @@ describe('sessionFetch', () => {
     expect(onExpired).not.toHaveBeenCalled();
   });
 
-  // A backend answering 401 for a reason a new token cannot fix would otherwise
-  // have every request bouncing between reissue and retry forever.
   it('gives up when the retry is rejected too', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
     fetchMock.mockRejectedValue(coFetchError(401, 'still unauthorized'));
@@ -158,33 +137,22 @@ describe('sessionFetch', () => {
     await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('still unauthorized');
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    // A token minted a moment ago being refused leaves nothing to keep, so the
-    // UI has to hear about it rather than go on presenting the user as
-    // connected.
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
     expect(onExpired).toHaveBeenCalled();
   });
 
-  // The backend failing to answer says nothing about whether the session is
-  // still good. Reading it as "the session is gone" logs the user out over a
-  // blip they never saw, and they cannot get back in without their PAT.
   it('keeps the session when the reissue itself fails', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
     fetchMock.mockRejectedValue(coFetchError(401, 'session expired'));
     reissueUnavailable();
     const onExpired = watchForExpiry();
 
-    // The original 401 surfaces, not the reissue failure: the caller is looking
-    // at the request it made, not at the recovery it never asked for.
     await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('session expired');
 
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_old');
     expect(onExpired).not.toHaveBeenCalled();
   });
 
-  // A page loads several resources at once, so one expiry surfaces as several
-  // 401s. Each asking for its own token would race, and every caller but the
-  // last would retry with one the backend had already replaced.
   it('shares one reissue between requests that fail together', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
     fetchMock
