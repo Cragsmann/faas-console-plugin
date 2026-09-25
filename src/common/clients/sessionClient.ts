@@ -77,9 +77,6 @@ export function getSessionToken(): string | null {
   return sessionStorage.getItem(SESSION_TOKEN_KEY);
 }
 
-// Returns a plain object, not a Headers instance. The SDK merges options.headers
-// with lodash defaultsDeep, which only copies own enumerable properties, and a
-// Headers instance has none: hand it one and every header is silently dropped.
 function withSessionHeader(headers?: HeadersInit): Record<string, string> {
   const merged = new Headers(headers || {});
   const token = getSessionToken();
@@ -105,8 +102,6 @@ const resumeSessionOnce: () => Promise<AuthUser | null> = (() => {
   };
 })();
 
-// consoleFetch rejects on a non-2xx response instead of returning it, so an
-// expired session arrives here as a thrown 401.
 async function withSessionRetry<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();
