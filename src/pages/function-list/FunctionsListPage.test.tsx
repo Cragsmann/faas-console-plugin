@@ -2,10 +2,10 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import {
-  authenticateGithubFake,
-  logoutGithubFake,
+  startSessionFake,
+  endSessionFake,
   logoutStub,
-} from '../../common/testing/authFake';
+} from '../../common/testing/sessionClientStub';
 import { listFunctionsStub } from '../../common/testing/functionsClientStub';
 import { repoListItem } from '../../common/testing/testData';
 import { FunctionListItem } from '../../common/types';
@@ -21,33 +21,23 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', async () => {
-  const consoleFetchJSON = async (url: string, _method?: string, options?: RequestInit) => {
-    const res = await fetch(new URL(url, 'http://localhost').href, options);
-    const json = await res.json();
-    if (!res.ok) throw json;
-    return json;
-  };
-
-  const consoleFetch = async (url: string, options?: RequestInit) =>
-    fetch(new URL(url, 'http://localhost').href, options);
-
   return {
     NamespaceBar: () => null,
     DocumentTitle: ({ children }: { children: string }) => children,
-    consoleFetch,
     ListPageHeader: ({ title, children }: { title: string; children?: React.ReactNode }) => (
       <>
         {title}
         {children}
       </>
     ),
-    consoleFetchJSON,
     SuccessStatus: ({ title }: { title: string }) => `Success: ${title}`,
     ProgressStatus: ({ title }: { title: string }) => `Progress: ${title}`,
     ErrorStatus: ({ title }: { title: string }) => `Error: ${title}`,
     InfoStatus: ({ title }: { title: string }) => `Info: ${title}`,
     StatusIconAndText: ({ title }: { title: string }) => `Warning: ${title}`,
     useDeleteModal: () => () => {},
+    consoleFetch: sdkTestDoubles.consoleFetchStub,
+    consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
     useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
     useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
     isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
@@ -58,8 +48,8 @@ describe('FunctionsListPage', () => {
   const funcName = 'my-func';
 
   beforeEach(() => {
-    logoutGithubFake();
-    authenticateGithubFake();
+    endSessionFake();
+    startSessionFake();
   });
 
   afterEach(() => {
@@ -67,7 +57,7 @@ describe('FunctionsListPage', () => {
   });
 
   afterAll(() => {
-    logoutGithubFake();
+    endSessionFake();
   });
 
   it('renders a spinner while loading', () => {
@@ -161,7 +151,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('does not call backend API when not authenticated', async () => {
-    logoutGithubFake();
+    endSessionFake();
     render(
       <MemoryRouter>
         <FunctionsListPage />
@@ -174,7 +164,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('clears the listed functions when the user disconnects', async () => {
-    listFunctionsStub({ responses: [repoListItem(funcName)] });
+    listFunctionsStub({ responses: [repoListItem({ repoName: funcName, name: funcName })] });
     sdkTestDoubles.setWatchFixtures(sdkTestDoubles.funcFixture(funcName));
     logoutStub();
 
@@ -260,7 +250,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('empty state receives hint and isCreateDisabled when not authenticated', async () => {
-    logoutGithubFake();
+    endSessionFake();
     render(
       <MemoryRouter>
         <FunctionsListPage />

@@ -1,5 +1,5 @@
 import { consoleFetch, consoleFetchJSON } from '@openshift-console/dynamic-plugin-sdk';
-import { logout, resumeSession, sessionFetch, sessionFetchJSON } from './sessionClient';
+import { login, logout, resumeSession, sessionFetch, sessionFetchJSON } from './sessionClient';
 import { SESSION_EXPIRED_EVENT, SESSION_HEADER, SESSION_TOKEN_KEY, USER_KEY } from '../types';
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
@@ -215,6 +215,56 @@ describe('sessionFetchJSON', () => {
 
     const [, , retried] = fetchJSONMock.mock.calls[1];
     expect(sentHeaders(retried)[SESSION_HEADER.toLowerCase()]).toBe('sess_new');
+  });
+});
+
+describe('login', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('exchanges the PAT for a session and returns the user', async () => {
+    vi.mocked(consoleFetchJSON.post).mockResolvedValue({
+      token: 'sess_new',
+      login: 'alice-gh',
+      avatarUrl: 'https://example.com/avatar',
+    });
+
+    await expect(login('ghp_valid')).resolves.toEqual({
+      name: 'alice-gh',
+      avatarUrl: 'https://example.com/avatar',
+    });
+
+    expect(vi.mocked(consoleFetchJSON.post)).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/auth/login'),
+      { pat: 'ghp_valid' },
+    );
+  });
+
+  it('stores the session token, not the PAT', async () => {
+    vi.mocked(consoleFetchJSON.post).mockResolvedValue({
+      token: 'sess_new',
+      login: 'alice-gh',
+      avatarUrl: '',
+    });
+
+    await login('ghp_valid');
+
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_new');
+    expect(sessionStorage.getItem(USER_KEY)).toBe(
+      JSON.stringify({ name: 'alice-gh', avatarUrl: '' }),
+    );
+    const allValues = Object.keys(sessionStorage).map((k) => sessionStorage.getItem(k));
+    expect(allValues).not.toContain('ghp_valid');
+  });
+
+  it('propagates the error when the backend rejects the PAT', async () => {
+    vi.mocked(consoleFetchJSON.post).mockRejectedValue(coFetchError(401, 'invalid github pat'));
+
+    await expect(login('ghp_bad')).rejects.toThrow('invalid github pat');
+
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
   });
 });
 
