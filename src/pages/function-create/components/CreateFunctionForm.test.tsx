@@ -20,6 +20,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  useActiveNamespace: () => ['', vi.fn()],
+}));
+
 const emptySecrets: K8sKeyedResource[] = [];
 const emptyConfigMaps: K8sKeyedResource[] = [];
 

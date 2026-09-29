@@ -34,6 +34,7 @@ import {
   ResourceEnvVar,
 } from '../../../common/types';
 import { isSystemNamespace } from '../../../common/utils/utils';
+import { useActiveNamespace } from '@openshift-console/dynamic-plugin-sdk';
 
 const OCP_INTERNAL_REGISTRY = 'image-registry.openshift-image-registry.svc:5000/';
 
@@ -378,6 +379,8 @@ const useNamespaceInput = ({
   setNamespaceFormField,
   setNamespaceWatchField,
 }: UseNamespaceInputProps) => {
+  const [activeNamespace] = useActiveNamespace();
+
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -408,11 +411,21 @@ const useNamespaceInput = ({
   const soleNamespace = !canCreateNamespaces && selectable.length === 1 ? selectable[0] : null;
 
   useEffect(() => {
-    if (soleNamespace && value !== soleNamespace) {
+    if (activeNamespace && selectable.includes(activeNamespace)) {
+      setNamespaceFormField(activeNamespace);
+      setNamespaceWatchField(activeNamespace);
+    } else if (soleNamespace && value !== soleNamespace) {
       setNamespaceWatchField(soleNamespace);
       setNamespaceFormField(soleNamespace);
     }
-  }, [soleNamespace, value, setNamespaceWatchField, setNamespaceFormField]);
+  }, [
+    soleNamespace,
+    value,
+    setNamespaceWatchField,
+    setNamespaceFormField,
+    activeNamespace,
+    selectable,
+  ]);
 
   const namespaceMissing =
     canCreateNamespaces && !!value && namespaces.length > 0 && !namespaces.includes(value);
