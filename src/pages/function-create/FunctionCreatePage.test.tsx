@@ -1,11 +1,8 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router';
 import { authenticateGithubFake, logoutGithubFake } from '../../common/testing/authFake';
-import { BACKEND_API } from '../../common/testing/constants';
-import { server } from '../../common/testing/mswServer';
-import { CreateFunctionRequest } from '../../common/types';
+import { createFunctionStub } from '../../common/testing/functionsClientStub';
 import FunctionCreatePage from './FunctionCreatePage';
 
 // vi.mock is hoisted above imports, so regular imports aren't available in the factory.
@@ -22,34 +19,9 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
-  async function handleResponse(res: Response) {
-    const json = await res.json();
-    if (!res.ok) throw json;
-    return json;
-  }
-
-  const consoleFetchJSON = Object.assign(
-    async (url: string, method?: string, options?: RequestInit) => {
-      const res = await fetch(new URL(url, 'http://localhost').href, options);
-      return handleResponse(res);
-    },
-    {
-      post: async (url: string, body: object) => {
-        const res = await fetch(new URL(url, 'http://localhost').href, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        return handleResponse(res);
-      },
-    },
-  );
-
   const consoleFetch = async (url: string, options?: RequestInit) => {
     const res = await fetch(new URL(url, 'http://localhost').href, options);
     if (!res.ok) {
-      // Mirror the SDK: a non-ok response is thrown as an Error with the Response attached,
-      // so callers can inspect the status (e.g. isNotFoundError on a 404).
       const json = await res.json();
       throw Object.assign(new Error(json.message), { response: res, json });
     }
@@ -64,7 +36,6 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
         {children}
       </>
     ),
-    consoleFetchJSON,
     consoleFetch,
     useAccessReview: sdkTestDoubles.useAccessReviewStub,
     useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
@@ -104,7 +75,7 @@ describe('FunctionCreatePage', () => {
 
   it('creates function via backend, then navigates on submit', async () => {
     const user = userEvent.setup();
-    backendAccepting();
+    createFunctionStub();
 
     renderPage();
 
@@ -118,11 +89,7 @@ describe('FunctionCreatePage', () => {
 
   it('shows an alert on error', async () => {
     const user = userEvent.setup();
-    server.use(
-      http.post(`${BACKEND_API}/api/v1/func/create`, () =>
-        HttpResponse.json({ message: 'Backend error' }, { status: 500 }),
-      ),
-    );
+    createFunctionStub({ errorResponse: { message: 'Backend error', status: 500 } });
 
     renderPage();
 
@@ -134,10 +101,12 @@ describe('FunctionCreatePage', () => {
 
   it('sends environment variables to backend during submission', async () => {
     const user = userEvent.setup();
-    backendAccepting({
-      envVars: [
-        { name: 'MY_VAR', source: 'value', value: 'my-value', resourceName: '', resourceKey: '' },
-      ],
+    createFunctionStub({
+      response: {
+        envVars: [
+          { name: 'MY_VAR', source: 'value', value: 'my-value', resourceName: '', resourceKey: '' },
+        ],
+      },
     });
 
     renderPage();
@@ -185,7 +154,7 @@ describe('FunctionCreatePage', () => {
 
       it('submits the namespace typed immediately before clicking Create', async () => {
         const user = userEvent.setup();
-        backendAccepting({ namespace: 'default' });
+        createFunctionStub({ response: { namespace: 'default' } });
 
         renderPage();
         await fillForm(user);
@@ -314,7 +283,7 @@ describe('FunctionCreatePage', () => {
       it('lets the user submit without touching the namespace field', async () => {
         const user = userEvent.setup();
         asDeveloperWithNamespaces('team-a');
-        backendAccepting({ namespace: 'team-a' });
+        createFunctionStub({ response: { namespace: 'team-a' } });
 
         renderPage();
         await user.type(screen.getByRole('textbox', { name: /Repository/ }), 'my-repo');
@@ -384,26 +353,6 @@ function setProjects(canCreate: boolean, names: string[]) {
     canCreate,
     projects: names.map((name) => sdkTestDoubles.projectFixture(name)),
   });
-}
-
-// Behaves like a backend that validates its input: it accepts the create request only when the
-// payload matches and rejects anything else. The page navigates away on success and shows an
-// alert on rejection, so the assertion stays on what the user sees.
-function backendAccepting(expected: Partial<CreateFunctionRequest> = {}) {
-  const keys = Object.keys(expected) as (keyof CreateFunctionRequest)[];
-
-  server.use(
-    http.post(`${BACKEND_API}/api/v1/func/create`, async ({ request }) => {
-      const body = (await request.json()) as CreateFunctionRequest;
-      const matches = keys.every(
-        (key) => JSON.stringify(body[key]) === JSON.stringify(expected[key]),
-      );
-      if (!matches) {
-        return HttpResponse.json({ message: 'Unexpected payload' }, { status: 422 });
-      }
-      return new HttpResponse(null, { status: 201 });
-    }),
-  );
 }
 
 function renderPage() {

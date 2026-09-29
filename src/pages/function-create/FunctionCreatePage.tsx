@@ -32,7 +32,7 @@ function FunctionCreatePageContent() {
     configMaps,
     canCreateNamespaces,
     namespaces,
-    onNamespaceChange,
+    setNamespaceWatchField,
     namespacesLoaded,
   } = useFunctionCreatePage();
 
@@ -63,7 +63,7 @@ function FunctionCreatePageContent() {
             configMaps={configMaps}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
-            onNamespaceChange={onNamespaceChange}
+            setNamespaceWatchField={setNamespaceWatchField}
             isSubmitting={isSubmitting}
             canCreateNamespaces={canCreateNamespaces}
             namespaces={namespaces}
@@ -84,10 +84,9 @@ function useFunctionCreatePage(): {
   canCreateNamespaces: boolean;
   namespaces: string[];
   namespacesLoaded: boolean;
-  inputNamespace: string;
   handleSubmit: (data: CreateFunctionFormData) => Promise<void>;
   handleCancel: () => void;
-  onNamespaceChange: (namespace: string) => void;
+  setNamespaceWatchField: (namespace: string) => void;
 } {
   const { t } = useTranslation('plugin__console-functions-plugin');
   const navigate = useNavigate();
@@ -100,10 +99,7 @@ function useFunctionCreatePage(): {
     error: namespacesError,
   } = useNamespaceOptions();
 
-  const [inputNamespace, setInputNamespace] = useState('');
-
-  // //input namespace is debounced before being used to watch for secrets and configmaps
-  // const watchedNamespace = useDebouncedValue(inputNamespace, 500);
+  const [namespaceWatchField, setNamespaceWatchField] = useState('');
 
   const {
     secrets,
@@ -111,7 +107,7 @@ function useFunctionCreatePage(): {
     error: clusterResourcesError,
   } = useCluster({
     functionNames: [],
-    namespace: inputNamespace,
+    namespace: namespaceWatchField,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -153,12 +149,11 @@ function useFunctionCreatePage(): {
     error: error || clusterResourcesErrorMessage,
     handleSubmit,
     handleCancel,
+    setNamespaceWatchField,
     isConnectedToForge,
     secrets,
     configMaps,
     canCreateNamespaces,
-    inputNamespace,
-    onNamespaceChange: setInputNamespace,
     namespaces,
     namespacesLoaded,
   };

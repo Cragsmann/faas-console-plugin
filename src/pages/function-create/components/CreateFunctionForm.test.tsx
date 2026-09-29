@@ -39,7 +39,7 @@ describe('CreateFunctionForm', () => {
     canCreateNamespaces: true,
     namespaces: [] as string[],
     namespacesLoaded: true,
-    onNamespaceChange: vi.fn(),
+    setNamespaceWatchField: vi.fn(),
   };
 
   // The form owns the namespace and only notifies the page, so nothing is fed back down.
