@@ -38,6 +38,7 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
     ),
     consoleFetch,
     useAccessReview: sdkTestDoubles.useAccessReviewStub,
+    useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
     useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
   };
 });
