@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import { BACKEND_API } from '../testing/constants';
 import { server } from '../testing/mswServer';
-import { FileEntry, FunctionListItem } from '../types';
+import { CreateFunctionRequest, FileEntry, FunctionListItem } from '../types';
 
 // -----------------------------------------------------------------------------
 // Test Doubles ----------------------------------------------------------------
@@ -98,6 +98,37 @@ export function putFilesStub({
       if (wait) await wait;
 
       return new HttpResponse(null, { status: 204 });
+    }),
+  );
+}
+
+export function createFunctionStub(
+  {
+    response,
+    errorResponse,
+  }: {
+    response?: Partial<CreateFunctionRequest>;
+    errorResponse?: { message: string; status: number };
+  } = { response: undefined },
+) {
+  const keys = response ? (Object.keys(response) as (keyof CreateFunctionRequest)[]) : [];
+
+  server.use(
+    http.post(`${BACKEND_API}/api/v1/func/create`, async ({ request }) => {
+      if (errorResponse)
+        return HttpResponse.json(
+          { message: errorResponse.message },
+          { status: errorResponse.status },
+        );
+
+      const body = (await request.json()) as CreateFunctionRequest;
+      const matches = keys.every(
+        (key) => JSON.stringify(body[key]) === JSON.stringify(response![key]),
+      );
+      if (!matches) {
+        return HttpResponse.json({ message: 'Unexpected payload' }, { status: 422 });
+      }
+      return new HttpResponse(null, { status: 201 });
     }),
   );
 }

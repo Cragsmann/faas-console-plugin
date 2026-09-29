@@ -1,4 +1,4 @@
-import { isNotFoundError, isSystemNamespace, parseFuncYaml } from './utils';
+import { isSystemNamespace, parseFuncYaml } from './utils';
 
 describe('isSystemNamespace', () => {
   it.each([
