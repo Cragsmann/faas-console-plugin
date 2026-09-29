@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { authenticateGithubFake, logoutGithubFake } from '../../common/testing/authFake';
+import { startSessionFake, endSessionFake } from '../../common/testing/sessionClientStub';
 import { timerFake } from '../../common/testing/timerFake';
 import {
   getFilesStub,
@@ -81,12 +81,12 @@ function renderEditPage(name: string) {
 
 describe('FunctionEditPage', () => {
   beforeEach(() => {
-    logoutGithubFake();
-    authenticateGithubFake();
+    endSessionFake();
+    startSessionFake();
   });
 
   afterAll(() => {
-    logoutGithubFake();
+    endSessionFake();
   });
 
   it('shows loading state in tree while fetching files', async () => {

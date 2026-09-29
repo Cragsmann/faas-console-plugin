@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router';
-import { authenticateGithubFake, logoutGithubFake, logoutStub } from '../../common/testing/authFake';
+import { startSessionFake, endSessionFake, logoutStub } from '../../common/testing/sessionClientStub';
 import {
   listFunctionsStub,
   receiveWorkflowRunEventsStub,
@@ -32,8 +32,8 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
       {children}
     </>
   ),
-  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONFake,
-  consoleFetch: sdkTestDoubles.consoleFetchFake,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
   SuccessStatus: ({ title }: { title: string }) => <span>Success: {title}</span>,
   ErrorStatus: ({ title }: { title: string }) => <span>Error: {title}</span>,
   InfoStatus: ({ title }: { title: string }) => <span>Info: {title}</span>,
@@ -48,8 +48,8 @@ describe('FunctionsListPage', () => {
   const funcName = 'my-func';
 
   beforeEach(() => {
-    logoutGithubFake();
-    authenticateGithubFake();
+    endSessionFake();
+    startSessionFake();
   });
 
   afterEach(() => {
@@ -58,7 +58,7 @@ describe('FunctionsListPage', () => {
   });
 
   afterAll(() => {
-    logoutGithubFake();
+    endSessionFake();
   });
 
   describe('Visible page elements and loading states', () => {
@@ -163,7 +163,7 @@ describe('FunctionsListPage', () => {
     });
 
     it('does not call backend API when not authenticated', async () => {
-      logoutGithubFake();
+      endSessionFake();
       render(
         <MemoryRouter>
           <FunctionsListPage />
@@ -176,7 +176,7 @@ describe('FunctionsListPage', () => {
     });
 
     it('empty state receives hint and isCreateDisabled when not authenticated', async () => {
-      logoutGithubFake();
+      endSessionFake();
       render(
         <MemoryRouter>
           <FunctionsListPage />

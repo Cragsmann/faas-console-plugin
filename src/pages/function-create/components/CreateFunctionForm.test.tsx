@@ -5,6 +5,10 @@ import { AuthUser } from '../../../common/types';
 import { CreateFunctionForm } from './CreateFunctionForm';
 import { K8sKeyedResource } from '../types';
 
+const sdkTestDoubles = await vi.hoisted(
+  async () => import('../../../common/testing/sdkTestDoubles'),
+);
+
 const testUser: AuthUser = { name: 'testuser', avatarUrl: '' };
 const authContext = {
   isAuthenticated: true,
@@ -22,11 +26,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-// AuthProvider reaches the SDK through SessionService. Nothing here fetches, so
-// stub it out rather than let vite try to compile the SDK's stylesheets.
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
-  consoleFetch: vi.fn(),
-  consoleFetchJSON: Object.assign(vi.fn(), { post: vi.fn() }),
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
 }));
 
 const emptySecrets: K8sKeyedResource[] = [];

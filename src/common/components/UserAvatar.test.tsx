@@ -5,44 +5,20 @@ import { UserAvatar } from './UserAvatar';
 import { SESSION_TOKEN_KEY, USER_KEY } from '../types';
 import { AuthContext } from '../context/AuthProvider';
 import { ReactNode } from 'react';
-import { authenticateGithubFake, logoutGithubFake } from '../testing/authFake';
+import { startSessionFake, endSessionFake, loginStub } from '../testing/sessionClientStub';
 import { BACKEND_API } from '../testing/constants';
 import { server } from '../testing/mswServer';
+
+const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
-  const consoleFetchJSON = Object.assign(
-    async (url: string, _method?: string, options?: RequestInit) => {
-      const res = await fetch(new URL(url, 'http://localhost').href, options);
-      const json = await res.json();
-      if (!res.ok) throw json;
-      return json;
-    },
-    {
-      post: async (url: string, body: unknown) => {
-        const res = await fetch(new URL(url, 'http://localhost').href, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const json = await res.json();
-        if (!res.ok) throw json;
-        return json;
-      },
-    },
-  );
-
-  const consoleFetch = async (url: string, options?: RequestInit) => {
-    const res = await fetch(new URL(url, 'http://localhost').href, options);
-    if (!res.ok) throw await res.json();
-    return res;
-  };
-
-  return { consoleFetch, consoleFetchJSON };
-});
+vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
+}));
 
 const LOGIN_URL = `${BACKEND_API}/api/v1/auth/login`;
 
@@ -70,18 +46,14 @@ function storedValues(): (string | null)[] {
 
 /** Puts the component in the connected state: authenticated context plus a stored session. */
 function connectedContext(overrides = {}) {
-  authenticateGithubFake();
+  startSessionFake();
   return authContext({ isAuthenticated: true, ...overrides });
 }
 
 describe('UserAvatar', () => {
   beforeEach(() => {
-    logoutGithubFake();
-    server.use(
-      http.post(LOGIN_URL, () =>
-        HttpResponse.json({ token: 'sess_new', login: 'twoGiants', avatarUrl: '' }),
-      ),
-    );
+    endSessionFake();
+    loginStub({ response: { token: 'sess_new', login: 'twoGiants', avatarUrl: '' } });
   });
 
   describe('rendering', () => {
@@ -169,7 +141,7 @@ describe('UserAvatar', () => {
     });
 
     it('does not auto-open modal when a session is already stored', () => {
-      authenticateGithubFake();
+      startSessionFake();
 
       renderWithContext(<UserAvatar enableReconnect />);
 
@@ -251,11 +223,7 @@ describe('UserAvatar', () => {
 
     it('shows error alert when the backend rejects the PAT', async () => {
       const user = userEvent.setup();
-      server.use(
-        http.post(LOGIN_URL, () =>
-          HttpResponse.json({ message: 'invalid github pat' }, { status: 401 }),
-        ),
-      );
+      loginStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
       renderWithContext(<UserAvatar enableReconnect />);
 
@@ -293,11 +261,7 @@ describe('UserAvatar', () => {
 
     it('clears PAT input and error on cancel', async () => {
       const user = userEvent.setup();
-      server.use(
-        http.post(LOGIN_URL, () =>
-          HttpResponse.json({ message: 'invalid github pat' }, { status: 401 }),
-        ),
-      );
+      loginStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
       renderWithContext(<UserAvatar enableReconnect />);
 

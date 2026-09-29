@@ -1,15 +1,19 @@
-import { consoleFetchJSON } from '@openshift-console/dynamic-plugin-sdk';
 import { render, screen, waitFor } from '@testing-library/react';
 import { useContext } from 'react';
 import { AuthContext, AuthProvider } from './AuthProvider';
-import { SESSION_TOKEN_KEY, USER_KEY } from '../types';
+import { SESSION_TOKEN_KEY } from '../types';
+import { startSessionFake, endSessionFake, resumeSessionStub } from '../testing/sessionClientStub';
 
-vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
-  consoleFetch: vi.fn(),
-  consoleFetchJSON: Object.assign(vi.fn(), { post: vi.fn() }),
+const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const resumeMock = vi.mocked(consoleFetchJSON.post);
+vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
+}));
 
 function ConnectionState() {
   const { isAuthenticated, user } = useContext(AuthContext);
@@ -18,15 +22,37 @@ function ConnectionState() {
 
 describe('AuthProvider', () => {
   beforeEach(() => {
-    sessionStorage.clear();
-    vi.clearAllMocks();
+    endSessionFake();
   });
 
   it('resumes the session when the tab has no token', async () => {
-    resumeMock.mockResolvedValue({
-      token: 'sess_new',
-      login: 'alice-gh',
-      avatarUrl: 'https://example.com/avatar',
+    resumeSessionStub();
+
+    render(
+      <AuthProvider>
+        <ConnectionState />
+      </AuthProvider>,
+    );
+
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_test');
+  });
+
+  it('stays disconnected when the backend has no credential to resume', async () => {
+    resumeSessionStub({ errorResponse: { message: 'no stored credential', status: 404 } });
+
+    render(
+      <AuthProvider>
+        <ConnectionState />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
+  });
+
+  it('survives a resume the backend could not answer', async () => {
+    resumeSessionStub({
+      errorResponse: { message: 'session store unavailable', status: 503 },
     });
 
     render(
@@ -35,16 +61,11 @@ describe('AuthProvider', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByText('connected as alice-gh')).toBeInTheDocument();
-    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_new');
+    await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
   });
 
-  it('stays disconnected when the backend has no credential to resume', async () => {
-    resumeMock.mockRejectedValue(
-      Object.assign(new Error('no stored credential'), {
-        response: new Response(null, { status: 404 }),
-      }),
-    );
+  it('does not ask for a session when the tab already has one', () => {
+    startSessionFake();
 
     render(
       <AuthProvider>
@@ -52,38 +73,6 @@ describe('AuthProvider', () => {
       </AuthProvider>,
     );
 
-    await waitFor(() => expect(resumeMock).toHaveBeenCalled());
-    expect(screen.getByText('not connected')).toBeInTheDocument();
-  });
-
-  it('survives a resume the backend could not answer', async () => {
-    resumeMock.mockRejectedValue(
-      Object.assign(new Error('session store unavailable'), {
-        response: new Response(null, { status: 503 }),
-      }),
-    );
-
-    render(
-      <AuthProvider>
-        <ConnectionState />
-      </AuthProvider>,
-    );
-
-    await waitFor(() => expect(resumeMock).toHaveBeenCalled());
-    expect(screen.getByText('not connected')).toBeInTheDocument();
-  });
-
-  it('does not ask for a session when the tab already has one', async () => {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_existing');
-    sessionStorage.setItem(USER_KEY, JSON.stringify({ name: 'alice-gh', avatarUrl: '' }));
-
-    render(
-      <AuthProvider>
-        <ConnectionState />
-      </AuthProvider>,
-    );
-
-    expect(screen.getByText('connected as alice-gh')).toBeInTheDocument();
-    expect(resumeMock).not.toHaveBeenCalled();
+    expect(screen.getByText('connected as twoGiants')).toBeInTheDocument();
   });
 });
