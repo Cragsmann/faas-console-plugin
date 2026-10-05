@@ -68,15 +68,12 @@ function useUserAvatar(enableReconnect: boolean) {
     onLogin(authUser);
   };
 
-  const openModal = () => setIsModalOpen(true);
-  const closeModal = () => setIsModalOpen(false);
-
   return {
     user,
     isConnected: isAuthenticated && Boolean(user.name),
     isModalOpen,
-    openModal,
-    closeModal,
+    openModal: () => setIsModalOpen(true),
+    closeModal: () => setIsModalOpen(false),
     login,
     disconnect: onLogout,
   };

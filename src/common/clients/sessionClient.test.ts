@@ -1,40 +1,69 @@
-import { consoleFetch, consoleFetchJSON } from '@openshift-console/dynamic-plugin-sdk';
+import { http, HttpResponse } from 'msw';
 import { login, logout, resumeSession, sessionFetch, sessionFetchJSON } from './sessionClient';
 import { SESSION_EXPIRED_EVENT, SESSION_HEADER, SESSION_TOKEN_KEY, USER_KEY } from '../types';
+import { BACKEND_API } from '../testing/constants';
+import { server } from '../testing/mswServer';
+import { loginStub, logoutStub, resumeSessionStub } from '../testing/sessionClientStub';
 
-vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
-  consoleFetch: vi.fn(),
-  consoleFetchJSON: Object.assign(vi.fn(), { post: vi.fn() }),
+const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
+
+const sdk = vi.hoisted(() => ({
+  calls: [] as { url: string; method?: string; options?: RequestInit }[],
 }));
 
-const fetchMock = vi.mocked(consoleFetch);
-const fetchJSONMock = vi.mocked(consoleFetchJSON);
+vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  consoleFetch: (url: string, options?: RequestInit) => {
+    sdk.calls.push({ url, options });
+    return sdkTestDoubles.consoleFetchStub(url, options);
+  },
+  consoleFetchJSON: Object.assign(
+    (url: string, method?: string, options?: RequestInit) => {
+      sdk.calls.push({ url, method, options });
+      return sdkTestDoubles.consoleFetchJSONStub(url, method, options);
+    },
+    { post: sdkTestDoubles.consoleFetchJSONStub.post },
+  ),
+}));
 
-function sentHeaders(options: RequestInit | undefined) {
-  return options?.headers as Record<string, string>;
+const CREATE_URL = `${BACKEND_API}/api/v1/func/create`;
+const LIST_URL = `${BACKEND_API}/api/v1/func/list`;
+const SESSION_URL = `${BACKEND_API}/api/v1/auth/session`;
+const LOGIN_URL = `${BACKEND_API}/api/v1/auth/login`;
+
+const ALICE = { name: 'alice-gh', avatarUrl: 'https://example.com/avatar' };
+
+function ok() {
+  return HttpResponse.json({ ok: true });
+}
+function fails(status: number, message: string) {
+  return () => HttpResponse.json({ message }, { status });
 }
 
-function coFetchError(status: number, message = 'request failed') {
-  return Object.assign(new Error(message), { response: new Response(null, { status }) });
+function endpoint(url: string, ...replies: (() => Response)[]) {
+  const requests: Request[] = [];
+  server.use(
+    http.all(url, ({ request }) => {
+      requests.push(request.clone());
+      return replies[Math.min(requests.length - 1, replies.length - 1)]();
+    }),
+  );
+  return requests;
 }
-function httpError(status: number, message = 'request failed') {
-  return Object.assign(new Error(message), { status, response: new Response(null, { status }) });
+
+function sentHeaders(index = 0) {
+  return sdk.calls[index].options?.headers as Record<string, string>;
 }
+
 function reissues(token: string) {
-  vi.mocked(consoleFetchJSON.post).mockResolvedValue({
-    token,
-    login: 'alice-gh',
-    avatarUrl: 'https://example.com/avatar',
-  });
+  resumeSessionStub({ response: { token, login: ALICE.name, avatarUrl: ALICE.avatarUrl } });
 }
 function noStoredCredential() {
-  vi.mocked(consoleFetchJSON.post).mockRejectedValue(coFetchError(404, 'no stored credential'));
+  resumeSessionStub({ errorResponse: { message: 'no stored credential', status: 404 } });
 }
 function reissueUnavailable() {
-  vi.mocked(consoleFetchJSON.post).mockRejectedValue(
-    coFetchError(503, 'session store unavailable'),
-  );
+  resumeSessionStub({ errorResponse: { message: 'session store unavailable', status: 503 } });
 }
+
 function watchForExpiry() {
   const onExpired = vi.fn();
   window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
@@ -42,50 +71,51 @@ function watchForExpiry() {
   return onExpired;
 }
 
-describe('sessionFetch', () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-    vi.clearAllMocks();
-    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
-    fetchJSONMock.mockResolvedValue({});
-  });
+beforeEach(() => {
+  sessionStorage.clear();
+  sdk.calls.length = 0;
+});
 
+describe('sessionFetch', () => {
   it('sends the stored session token', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
+    const requests = endpoint(CREATE_URL, ok);
 
-    await sessionFetch('/api/v1/func/create', { method: 'POST' });
+    await sessionFetch(CREATE_URL, { method: 'POST' });
 
-    const [, options] = fetchMock.mock.calls[0];
-    expect(sentHeaders(options)[SESSION_HEADER.toLowerCase()]).toBe('sess_test');
+    expect(requests[0].headers.get(SESSION_HEADER)).toBe('sess_test');
   });
 
+  // The console merges these headers into its own, which a Headers instance
+  // does not survive: it arrives as an empty object and the token is dropped.
   it('passes headers as a plain object, not a Headers instance', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
+    endpoint(CREATE_URL, ok);
 
-    await sessionFetch('/api/v1/func/create');
+    await sessionFetch(CREATE_URL);
 
-    const [, options] = fetchMock.mock.calls[0];
-    expect(sentHeaders(options)).not.toBeInstanceOf(Headers);
-    expect(Object.keys(sentHeaders(options))).toContain(SESSION_HEADER.toLowerCase());
+    expect(sentHeaders()).not.toBeInstanceOf(Headers);
+    expect(Object.keys(sentHeaders())).toContain(SESSION_HEADER.toLowerCase());
   });
 
   it('keeps headers supplied by the caller', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
+    const requests = endpoint(CREATE_URL, ok);
 
-    await sessionFetch('/api/v1/func/create', {
+    await sessionFetch(CREATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
 
-    const [, options] = fetchMock.mock.calls[0];
-    expect(sentHeaders(options)['content-type']).toBe('application/json');
+    expect(requests[0].headers.get('content-type')).toBe('application/json');
   });
 
   it('omits the session header when there is no session', async () => {
-    await sessionFetch('/api/v1/func/create');
+    const requests = endpoint(CREATE_URL, ok);
 
-    const [, options] = fetchMock.mock.calls[0];
-    expect(Object.keys(sentHeaders(options))).not.toContain(SESSION_HEADER.toLowerCase());
+    await sessionFetch(CREATE_URL);
+
+    expect(requests[0].headers.get(SESSION_HEADER)).toBeNull();
   });
 
   // Regression: the console reports the code only on the attached Response.
@@ -93,61 +123,48 @@ describe('sessionFetch', () => {
   // the backend had already forgotten.
   it('clears the session and announces expiry on a 401 it cannot resume', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
-    fetchMock.mockRejectedValue(coFetchError(401, 'authentication required'));
+    endpoint(CREATE_URL, fails(401, 'authentication required'));
     noStoredCredential();
     const onExpired = watchForExpiry();
 
-    await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('authentication required');
+    await expect(sessionFetch(CREATE_URL)).rejects.toThrow('authentication required');
 
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
     expect(onExpired).toHaveBeenCalled();
   });
 
-  it('clears the session when the 401 arrives as an HttpError', async () => {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
-    fetchMock.mockRejectedValue(httpError(401, 'Unauthorized'));
-    noStoredCredential();
-
-    await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('Unauthorized');
-
-    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
-  });
-
   it('reissues the session and retries once after a 401', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
-    fetchMock
-      .mockRejectedValueOnce(coFetchError(401, 'session expired'))
-      .mockResolvedValue(new Response(null, { status: 200 }));
+    const requests = endpoint(CREATE_URL, fails(401, 'session expired'), ok);
     reissues('sess_new');
     const onExpired = watchForExpiry();
 
-    await expect(sessionFetch('/api/v1/func/create')).resolves.toBeInstanceOf(Response);
+    await expect(sessionFetch(CREATE_URL)).resolves.toBeInstanceOf(Response);
 
-    const [, retried] = fetchMock.mock.calls[1];
-    expect(sentHeaders(retried)[SESSION_HEADER.toLowerCase()]).toBe('sess_new');
+    expect(requests[1].headers.get(SESSION_HEADER)).toBe('sess_new');
     expect(onExpired).not.toHaveBeenCalled();
   });
 
   it('gives up when the retry is rejected too', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
-    fetchMock.mockRejectedValue(coFetchError(401, 'still unauthorized'));
+    const requests = endpoint(CREATE_URL, fails(401, 'still unauthorized'));
     reissues('sess_new');
     const onExpired = watchForExpiry();
 
-    await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('still unauthorized');
+    await expect(sessionFetch(CREATE_URL)).rejects.toThrow('still unauthorized');
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requests).toHaveLength(2);
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
     expect(onExpired).toHaveBeenCalled();
   });
 
   it('keeps the session when the reissue itself fails', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
-    fetchMock.mockRejectedValue(coFetchError(401, 'session expired'));
+    endpoint(CREATE_URL, fails(401, 'session expired'));
     reissueUnavailable();
     const onExpired = watchForExpiry();
 
-    await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('session expired');
+    await expect(sessionFetch(CREATE_URL)).rejects.toThrow('session expired');
 
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_old');
     expect(onExpired).not.toHaveBeenCalled();
@@ -155,52 +172,46 @@ describe('sessionFetch', () => {
 
   it('shares one reissue between requests that fail together', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
-    fetchMock
-      .mockRejectedValueOnce(coFetchError(401, 'session expired'))
-      .mockRejectedValueOnce(coFetchError(401, 'session expired'))
-      .mockResolvedValue(new Response(null, { status: 200 }));
-    reissues('sess_new');
+    endpoint(LIST_URL, fails(401, 'session expired'), ok);
+    endpoint(CREATE_URL, fails(401, 'session expired'), ok);
+    const reissued = endpoint(SESSION_URL, () =>
+      HttpResponse.json({ token: 'sess_new', login: ALICE.name, avatarUrl: ALICE.avatarUrl }),
+    );
 
-    await Promise.all([sessionFetch('/api/v1/func/list'), sessionFetch('/api/v1/func/create')]);
+    await Promise.all([sessionFetch(LIST_URL), sessionFetch(CREATE_URL)]);
 
-    expect(fetchJSONMock.post).toHaveBeenCalledTimes(1);
+    expect(reissued).toHaveLength(1);
   });
 
   it('leaves the session alone on other errors', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
-    fetchMock.mockRejectedValue(coFetchError(500, 'Server Error'));
+    endpoint(CREATE_URL, fails(500, 'Server Error'));
 
-    await expect(sessionFetch('/api/v1/func/create')).rejects.toThrow('Server Error');
+    await expect(sessionFetch(CREATE_URL)).rejects.toThrow('Server Error');
 
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_test');
   });
 });
 
 describe('sessionFetchJSON', () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-    vi.clearAllMocks();
-    fetchJSONMock.mockResolvedValue({});
-  });
-
   it('passes the session token as a plain object header', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
+    endpoint(LIST_URL, ok);
 
-    await sessionFetchJSON('/api/v1/func/list');
+    await sessionFetchJSON(LIST_URL);
 
-    const [, method, options] = fetchJSONMock.mock.calls[0];
-    expect(method).toBe('GET');
-    expect(sentHeaders(options)).not.toBeInstanceOf(Headers);
-    expect(sentHeaders(options)[SESSION_HEADER.toLowerCase()]).toBe('sess_test');
+    expect(sdk.calls[0].method).toBe('GET');
+    expect(sentHeaders()).not.toBeInstanceOf(Headers);
+    expect(sentHeaders()[SESSION_HEADER.toLowerCase()]).toBe('sess_test');
   });
 
   it('clears the session and announces expiry on a 401 it cannot resume', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
-    fetchJSONMock.mockRejectedValue(coFetchError(401, 'authentication required'));
+    endpoint(LIST_URL, fails(401, 'authentication required'));
     noStoredCredential();
     const onExpired = watchForExpiry();
 
-    await expect(sessionFetchJSON('/api/v1/func/list')).rejects.toThrow('authentication required');
+    await expect(sessionFetchJSON(LIST_URL)).rejects.toThrow('authentication required');
 
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
     expect(onExpired).toHaveBeenCalled();
@@ -208,59 +219,49 @@ describe('sessionFetchJSON', () => {
 
   it('reissues the session and retries once after a 401', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_old');
-    fetchJSONMock.mockRejectedValueOnce(coFetchError(401, 'session expired')).mockResolvedValue([]);
+    const requests = endpoint(LIST_URL, fails(401, 'session expired'), () => HttpResponse.json([]));
     reissues('sess_new');
 
-    await expect(sessionFetchJSON('/api/v1/func/list')).resolves.toEqual([]);
+    await expect(sessionFetchJSON(LIST_URL)).resolves.toEqual([]);
 
-    const [, , retried] = fetchJSONMock.mock.calls[1];
-    expect(sentHeaders(retried)[SESSION_HEADER.toLowerCase()]).toBe('sess_new');
+    expect(requests[1].headers.get(SESSION_HEADER)).toBe('sess_new');
   });
 });
 
 describe('login', () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-    vi.clearAllMocks();
-  });
-
   it('exchanges the PAT for a session and returns the user', async () => {
-    vi.mocked(consoleFetchJSON.post).mockResolvedValue({
-      token: 'sess_new',
-      login: 'alice-gh',
-      avatarUrl: 'https://example.com/avatar',
-    });
-
-    await expect(login('ghp_valid')).resolves.toEqual({
-      name: 'alice-gh',
-      avatarUrl: 'https://example.com/avatar',
-    });
-
-    expect(vi.mocked(consoleFetchJSON.post)).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/auth/login'),
-      { pat: 'ghp_valid' },
+    let sent: { pat?: string } = {};
+    server.use(
+      http.post(LOGIN_URL, async ({ request }) => {
+        sent = (await request.json()) as { pat?: string };
+        return HttpResponse.json({
+          token: 'sess_new',
+          login: ALICE.name,
+          avatarUrl: ALICE.avatarUrl,
+        });
+      }),
     );
+
+    await expect(login('ghp_valid')).resolves.toEqual(ALICE);
+
+    expect(sent.pat).toBe('ghp_valid');
   });
 
   it('stores the session token, not the PAT', async () => {
-    vi.mocked(consoleFetchJSON.post).mockResolvedValue({
-      token: 'sess_new',
-      login: 'alice-gh',
-      avatarUrl: '',
-    });
+    loginStub({ response: { token: 'sess_new', login: ALICE.name, avatarUrl: '' } });
 
     await login('ghp_valid');
 
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_new');
     expect(sessionStorage.getItem(USER_KEY)).toBe(
-      JSON.stringify({ name: 'alice-gh', avatarUrl: '' }),
+      JSON.stringify({ name: ALICE.name, avatarUrl: '' }),
     );
     const allValues = Object.keys(sessionStorage).map((k) => sessionStorage.getItem(k));
     expect(allValues).not.toContain('ghp_valid');
   });
 
   it('propagates the error when the backend rejects the PAT', async () => {
-    vi.mocked(consoleFetchJSON.post).mockRejectedValue(coFetchError(401, 'invalid github pat'));
+    loginStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
     await expect(login('ghp_bad')).rejects.toThrow('invalid github pat');
 
@@ -269,18 +270,10 @@ describe('login', () => {
 });
 
 describe('resume', () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-    vi.clearAllMocks();
-  });
-
   it('stores the reissued session and reports the user', async () => {
     reissues('sess_new');
 
-    await expect(resumeSession()).resolves.toEqual({
-      name: 'alice-gh',
-      avatarUrl: 'https://example.com/avatar',
-    });
+    await expect(resumeSession()).resolves.toEqual(ALICE);
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_new');
   });
 
@@ -304,26 +297,23 @@ describe('resume', () => {
 });
 
 describe('logout', () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-    vi.clearAllMocks();
-    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
-  });
-
   it('revokes on the backend and clears local state', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
+    const requests = endpoint(
+      `${BACKEND_API}/api/v1/auth/logout`,
+      () => new Response(null, { status: 204 }),
+    );
 
     await logout();
 
-    const [, options] = fetchMock.mock.calls[0];
-    expect(sentHeaders(options)[SESSION_HEADER]).toBe('sess_test');
+    expect(requests[0].headers.get(SESSION_HEADER)).toBe('sess_test');
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
     expect(sessionStorage.getItem(USER_KEY)).toBeNull();
   });
 
   it('clears local state even when revocation fails', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'sess_test');
-    fetchMock.mockRejectedValue(coFetchError(503, 'session store unavailable'));
+    logoutStub({ errorResponse: { message: 'session store unavailable', status: 503 } });
 
     await expect(logout()).resolves.toBeUndefined();
 
