@@ -140,7 +140,7 @@ var _ = Describe("POST /api/v1/func/create", func() {
 				},
 			})
 			withClusterStub(&cluster.ClientStub{})
-		}, http.StatusUnauthorized),
+		}, http.StatusForbidden),
 
 		Entry("InitRepo returns generic error", func() {
 			withSCMStub(&scm.ClientStub{
@@ -158,7 +158,7 @@ var _ = Describe("POST /api/v1/func/create", func() {
 				},
 			})
 			withClusterStub(&cluster.ClientStub{})
-		}, http.StatusUnauthorized),
+		}, http.StatusForbidden),
 
 		Entry("StoreSecret returns generic error", func() {
 			withSCMStub(&scm.ClientStub{
@@ -176,7 +176,7 @@ var _ = Describe("POST /api/v1/func/create", func() {
 				},
 			})
 			withClusterStub(&cluster.ClientStub{})
-		}, http.StatusUnauthorized),
+		}, http.StatusForbidden),
 
 		Entry("StoreVariable returns generic error", func() {
 			withSCMStub(&scm.ClientStub{
@@ -194,7 +194,7 @@ var _ = Describe("POST /api/v1/func/create", func() {
 				},
 			})
 			withClusterStub(&cluster.ClientStub{})
-		}, http.StatusUnauthorized),
+		}, http.StatusForbidden),
 
 		Entry("PushFiles returns generic error", func() {
 			withSCMStub(&scm.ClientStub{

@@ -389,7 +389,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		Expect(items).To(BeEmpty())
 	})
 
-	It("returns 401 when the SCM token is invalid", func() {
+	It("returns 403 when the SCM token is invalid", func() {
 		withSCMStub(&scm.ClientStub{
 			OnListRepos: func(ctx context.Context) ([]scm.Repo, error) {
 				return nil, scm.ErrUnauthorized
@@ -400,7 +400,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		w := httptest.NewRecorder()
 		(testHandlers(Handlers{})).HandleListFunctions(w, listRequest())
 
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
+		Expect(w.Code).To(Equal(http.StatusForbidden))
 	})
 
 	It("returns 400 when neither namespace nor all is provided", func() {
