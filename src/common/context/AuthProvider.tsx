@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useEffect, useState } from 'react';
-import { isSessionActive, logout, resumeSession } from '../clients/sessionClient';
+import { isSessionActive, logout, resumeSessionOnce } from '../clients/sessionClient';
 import { AuthUser, SESSION_EXPIRED_EVENT, USER_KEY } from '../types';
 
 const NO_USER: AuthUser = { name: '', avatarUrl: '' };
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   useEffect(() => {
     if (isSessionActive()) return;
     let cancelled = false;
-    resumeSession()
+    resumeSessionOnce()
       .then((resumed) => {
         if (resumed && !cancelled) onLogin(resumed);
       })

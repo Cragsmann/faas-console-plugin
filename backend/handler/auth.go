@@ -32,14 +32,19 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify PAT by fetching the user from GitHub
-	scmClient, err := config.SCMRegistry.NewClient(scm.GitHub, req.PAT)
+	scmClient, err := config.SCMRegistry.NewClient(scm.DefaultPlatform, req.PAT)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create scm client")
 		return
 	}
 	user, err := scmClient.GetUser(r.Context())
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid github pat")
+		if errors.Is(err, scm.ErrUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "invalid github pat")
+			return
+		}
+		slog.Error("failed to verify pat with the scm provider", "err", err)
+		writeError(w, http.StatusBadGateway, "failed to reach the SCM API")
 		return
 	}
 
