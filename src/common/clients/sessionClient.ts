@@ -92,7 +92,7 @@ function statusOf(err: unknown): number | undefined {
   return e?.status ?? e?.response?.status;
 }
 
-const resumeSessionOnce: () => Promise<AuthUser | null> = (() => {
+export const resumeSessionOnce: () => Promise<AuthUser | null> = (() => {
   let pending: Promise<AuthUser | null> | null = null;
   return () => {
     pending ??= resumeSession().finally(() => {

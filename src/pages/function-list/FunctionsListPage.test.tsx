@@ -127,7 +127,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('shows error alert when listing functions fails', async () => {
-    listFunctionsStub({ errorResponse: { message: 'Bad credentials', status: 401 } });
+    listFunctionsStub({ errorResponse: { message: 'Bad credentials', status: 403 } });
 
     render(
       <MemoryRouter>
