@@ -35,7 +35,7 @@ func (u User) Matches(other User) bool {
 
 // Resolver turns a bearer token into the user it authenticates as.
 type Resolver interface {
-	Resolve(ctx context.Context, token string) (User, error)
+	ResolveUserIdentity(ctx context.Context, token string) (User, error)
 }
 
 // users OCP identity is cached for 1 hour
@@ -58,7 +58,7 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
-func (r *reviewResolver) Resolve(ctx context.Context, token string) (User, error) {
+func (r *reviewResolver) ResolveUserIdentity(ctx context.Context, token string) (User, error) {
 	if token == "" {
 		return User{}, fmt.Errorf("%w: no bearer token", ErrUnauthenticated)
 	}
@@ -135,7 +135,7 @@ type ResolverStub struct {
 	OnResolve func(ctx context.Context, token string) (User, error)
 }
 
-func (s *ResolverStub) Resolve(ctx context.Context, token string) (User, error) {
+func (s *ResolverStub) ResolveUserIdentity(ctx context.Context, token string) (User, error) {
 	if s.OnResolve != nil {
 		return s.OnResolve(ctx, token)
 	}

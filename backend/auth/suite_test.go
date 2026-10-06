@@ -1,4 +1,4 @@
-package session
+package auth
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSession(t *testing.T) {
+func TestAuth(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Session Suite")
+	RunSpecs(t, "Auth Suite")
 }

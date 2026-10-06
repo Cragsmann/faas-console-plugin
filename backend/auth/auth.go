@@ -1,7 +1,8 @@
-// Package session keeps SCM credentials in Kubernetes Secrets instead of the
+// Package auth keeps SCM credentials in Kubernetes Secrets instead of the
 // browser. A caller trades a session token plus its OpenShift identity for the
-// credential; the credential itself never leaves the backend.
-package session
+// credential; the credential itself never leaves the backend. Who the caller is
+// comes from the auth/identity subpackage.
+package auth
 
 import (
 	"context"
@@ -15,7 +16,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/openshift/faas-console-plugin/backend/identity"
+	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,8 +25,8 @@ import (
 )
 
 const (
-	credentialTTL       = 24 * time.Hour
-	sessionTTL          = time.Hour
+	credentialTTL       = 7 * 24 * time.Hour
+	sessionTTL          = 24 * time.Hour
 	tokenLength         = 16
 	secretNamePrefix    = "scm-cred-"
 	CredentialTypePAT   = "pat"
@@ -91,7 +92,7 @@ func (s *Store) CreateSession(ctx context.Context, user identity.User, cred Cred
 	}
 
 	now := time.Now()
-	err = s.write(ctx, user, secretData{
+	err = s.writeCredential(ctx, user, secretData{
 		Credential:       cred.Secret,
 		Type:             cred.Type,
 		Owner:            cred.Owner,
@@ -109,7 +110,7 @@ func (s *Store) CreateSession(ctx context.Context, user identity.User, cred Cred
 }
 
 func (s *Store) GetCredential(ctx context.Context, token string, user identity.User) (Credential, error) {
-	data, err := s.readOwned(ctx, user)
+	data, err := s.readCredential(ctx, user)
 	if err != nil {
 		return Credential{}, err
 	}
@@ -132,7 +133,7 @@ func (s *Store) GetCredential(ctx context.Context, token string, user identity.U
 }
 
 func (s *Store) Reissue(ctx context.Context, user identity.User) (Session, error) {
-	data, err := s.readOwned(ctx, user)
+	data, err := s.readCredential(ctx, user)
 	if err != nil {
 		return Session{}, err
 	}
@@ -147,7 +148,7 @@ func (s *Store) Reissue(ctx context.Context, user identity.User) (Session, error
 		}
 		data.SessionToken = token
 		data.SessionExpiresAt = time.Now().Add(sessionTTL)
-		if err := s.write(ctx, user, data); err != nil {
+		if err := s.writeCredential(ctx, user, data); err != nil {
 			return Session{}, err
 		}
 	}
@@ -163,11 +164,7 @@ func (s *Store) DeleteSession(ctx context.Context, user identity.User) error {
 	return nil
 }
 
-// readOwned reads the user's stored credential and re-checks the binding
-// written into it. The Secret is named after a hash of the identity, so a
-// deleted and recreated account could land on the same name; the binding is
-// verified, never inferred from where the Secret was found.
-func (s *Store) readOwned(ctx context.Context, user identity.User) (secretData, error) {
+func (s *Store) readCredential(ctx context.Context, user identity.User) (secretData, error) {
 	secret, err := s.client.CoreV1().Secrets(s.namespace).Get(ctx, secretName(user), metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -199,14 +196,13 @@ func (s *Store) dropIfExpired(ctx context.Context, user identity.User, data secr
 	if !time.Now().After(data.ExpiresAt) {
 		return nil
 	}
-	// Best effort cleanup: the caller is rejected either way.
 	if err := s.DeleteSession(ctx, user); err != nil {
 		slog.Error("failed to delete expired credential", "err", err)
 	}
 	return ErrNoCredential
 }
 
-func (s *Store) write(ctx context.Context, user identity.User, data secretData) error {
+func (s *Store) writeCredential(ctx context.Context, user identity.User, data secretData) error {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal secret data: %w", err)

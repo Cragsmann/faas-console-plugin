@@ -3,13 +3,74 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
+	"github.com/openshift/faas-console-plugin/backend/auth"
+	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/scm"
-	"github.com/openshift/faas-console-plugin/backend/session"
 )
+
+const sessionHeader = "X-FUNC-SESSION"
+
+// errNoSessionToken means the request carried no session handle at all, which
+// is the caller's problem rather than a sign anything is wrong here.
+var errNoSessionToken = errors.New("no session token in the request")
+
+func (h *Handlers) extractCredentialFromSession(r *http.Request) (auth.Credential, error) {
+	// Deliberately not Authorization: that header carries the OCP user token
+	// forwarded by the console proxy (see extractOCPToken).
+	token := r.Header.Get(sessionHeader)
+	if token == "" {
+		return auth.Credential{}, fmt.Errorf("%w: no %s header", errNoSessionToken, sessionHeader)
+	}
+
+	user, err := h.currentUser(r)
+	if err != nil {
+		return auth.Credential{}, err
+	}
+
+	return h.sessionStore.GetCredential(r.Context(), token, user)
+}
+
+func (h *Handlers) currentUser(r *http.Request) (identity.User, error) {
+	ocpToken, ok := extractOCPToken(r)
+	if !ok {
+		return identity.User{}, fmt.Errorf("%w: no OpenShift user token", identity.ErrUnauthenticated)
+	}
+
+	user, err := h.identityResolver.ResolveUserIdentity(r.Context(), ocpToken)
+	if err != nil {
+		return identity.User{}, fmt.Errorf("resolve OpenShift user: %w", err)
+	}
+	return user, nil
+}
+
+func extractOCPToken(r *http.Request) (string, bool) {
+	header := r.Header.Get("Authorization")
+	if !strings.HasPrefix(header, "Bearer ") {
+		return "", false
+	}
+	token := strings.TrimPrefix(header, "Bearer ")
+	return token, token != ""
+}
+
+func writeSessionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errNoSessionToken),
+		errors.Is(err, identity.ErrUnauthenticated),
+		errors.Is(err, auth.ErrInvalidSession),
+		errors.Is(err, auth.ErrNoCredential):
+		slog.Warn("rejecting request without a usable session", "err", err)
+		writeError(w, http.StatusUnauthorized, "authentication required")
+	default:
+		slog.Error("could not resolve the caller's session", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "session store unavailable")
+	}
+}
 
 func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	ocpUser, err := h.currentUser(r)
@@ -48,11 +109,11 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.sessionStore.CreateSession(r.Context(), ocpUser, session.Credential{
+	token, err := h.sessionStore.CreateSession(r.Context(), ocpUser, auth.Credential{
 		Owner:     user.Login,
 		AvatarURL: user.AvatarURL,
 		Secret:    req.PAT,
-		Type:      session.CredentialTypePAT,
+		Type:      auth.CredentialTypePAT,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create session")
@@ -74,7 +135,7 @@ func (h *Handlers) HandleResumeSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sess, err := h.sessionStore.Reissue(r.Context(), ocpUser)
-	if errors.Is(err, session.ErrNoCredential) {
+	if errors.Is(err, auth.ErrNoCredential) {
 		writeError(w, http.StatusNotFound, "no stored credential")
 		return
 	}

@@ -17,11 +17,11 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/openshift/faas-console-plugin/backend/auth"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/handler"
 	"github.com/openshift/faas-console-plugin/backend/scm"
 	"github.com/openshift/faas-console-plugin/backend/scm/github"
-	"github.com/openshift/faas-console-plugin/backend/session"
 	"github.com/openshift/faas-console-plugin/backend/tlsreload"
 )
 
@@ -87,7 +87,7 @@ func main() {
 	if namespace == "" {
 		namespace = defaultSessionNamespace
 	}
-	sessionStore, err := session.NewStore(cfg, namespace)
+	sessionStore, err := auth.NewStore(cfg, namespace)
 	if err != nil {
 		log.Fatal(err)
 	}
