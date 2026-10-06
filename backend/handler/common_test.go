@@ -7,12 +7,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/openshift/faas-console-plugin/backend/auth"
+	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	"github.com/openshift/faas-console-plugin/backend/cluster"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/functions"
-	"github.com/openshift/faas-console-plugin/backend/identity"
 	"github.com/openshift/faas-console-plugin/backend/scm"
-	"github.com/openshift/faas-console-plugin/backend/session"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -28,7 +28,7 @@ const (
 // testOCPUser is the OpenShift user every test session is bound to.
 var testOCPUser = identity.User{Username: "tester", UID: "tester-uid"}
 
-// The handler tests run against a real session.Store over a fake cluster rather
+// The handler tests run against a real auth.Store over a fake cluster rather
 // than a stand-in, so the ownership and expiry rules under test are the ones
 // that ship. The token has to be fixed because authenticate builds requests
 // before testHandlers exists, and a real store hands out a random one, so it is
@@ -40,12 +40,12 @@ var (
 
 func init() {
 	client := fake.NewClientset()
-	store := session.NewStoreWithClient(client, testNamespace)
+	store := auth.NewStoreWithClient(client, testNamespace)
 
-	token, err := store.CreateSession(context.Background(), testOCPUser, session.Credential{
+	token, err := store.CreateSession(context.Background(), testOCPUser, auth.Credential{
 		Owner:  "tester",
 		Secret: "test-pat",
-		Type:   session.CredentialTypePAT,
+		Type:   auth.CredentialTypePAT,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("seed test session: %v", err))
@@ -82,7 +82,7 @@ func testHandlers(h Handlers) *Handlers {
 	// A cluster of its own per call, so one spec revoking a session cannot
 	// change what the next one sees.
 	sessionCluster = fake.NewClientset(testSessionSecret.DeepCopy())
-	h.sessionStore = session.NewStoreWithClient(sessionCluster, testNamespace)
+	h.sessionStore = auth.NewStoreWithClient(sessionCluster, testNamespace)
 
 	if h.identityResolver == nil {
 		h.identityResolver = &identity.ResolverStub{

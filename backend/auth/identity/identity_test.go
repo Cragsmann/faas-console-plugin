@@ -42,7 +42,7 @@ var _ = Describe("Resolve", func() {
 	It("rejects an empty token instead of calling the API server", func() {
 		resolver := NewResolver("https://api.example.com:6443", nil)
 
-		_, err := resolver.Resolve(context.Background(), "")
+		_, err := resolver.ResolveUserIdentity(context.Background(), "")
 		Expect(err).To(MatchError(ErrUnauthenticated))
 	})
 
@@ -57,14 +57,14 @@ var _ = Describe("Resolve", func() {
 
 		r.store(cacheKey(token), alice)
 
-		user, err := r.Resolve(context.Background(), token)
+		user, err := r.ResolveUserIdentity(context.Background(), token)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(user).To(Equal(alice))
 
 		// Past the TTL the entry is ignored, so Resolve falls through to the API
 		// server and fails for want of one rather than serving the stale answer.
 		r.entries[cacheKey(token)] = cacheEntry{user: alice, expiresAt: time.Now().Add(-time.Second)}
-		_, err = r.Resolve(context.Background(), token)
+		_, err = r.ResolveUserIdentity(context.Background(), token)
 		Expect(err).To(HaveOccurred(), "Resolve should not serve an expired entry")
 	})
 })

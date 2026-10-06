@@ -114,8 +114,8 @@ Go + `net/http` standard library. Key dependencies:
 | `handler` | HTTP handlers: input validation, orchestration, error mapping |
 | `scm` | SCM abstraction types (`Platform`, `Registry`, `Client`) and filesystem helpers |
 | `scm/github` | go-github implementation of `scm.Client` |
-| `identity` | Who the caller is: turns the console-forwarded user token into an `identity.User` (username + UID) via `SelfSubjectReview`, with a short-lived cache |
-| `session` | Session credentials (GitHub PAT today, OAuth later) stored as Secrets in the backend's own namespace, each bound to the `identity.User` that created it |
+| `auth` | Session credentials (GitHub PAT today, OAuth later) stored as Secrets in the backend's own namespace, each bound to the `identity.User` that created it |
+| `auth/identity` | Who the caller is: turns the console-forwarded user token into an `identity.User` (username + UID) via `SelfSubjectReview`, with a short-lived cache |
 | `config` | Runtime configuration, package-level wiring vars (`SCMRegistry`), constants, and service account token expiry parsing |
 | `tlsreload` | Reloads the serving cert/key from disk on change (fsnotify plus a poll fallback), swapping an atomic `*tls.Certificate` via `GetCertificate` so rotated certs are served without a restart |
 
@@ -128,8 +128,9 @@ Go + `net/http` standard library. Key dependencies:
 - `scm` has no knowledge of cluster or functions
 - `functions` imports `scm` only for `scm.Platform` and `scm.FileEntry` types
 - `config` is imported by `handler`, `functions`, and `main` only; it owns runtime configuration and package-level wiring
-- `identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend, so `session` and `handler` can both depend on it without a cycle
-- `session` imports `identity` because a session is meaningless without the user it belongs to
+- `auth/identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend, so `auth` and `handler` can both depend on it without a cycle
+- `auth` imports `auth/identity` because a session is meaningless without the user it belongs to. It is a subpackage rather than part of `auth` itself so that "which OpenShift user is this?" stays answerable without dragging in credential storage
+- `auth` knows nothing about `scm`, `cluster`, or HTTP. The login handler lives in `handler` (as `handler/auth.go`, alongside the request-scoped plumbing: `sessionHeader`, `currentUser`, `extractCredentialFromSession`, `writeSessionError`), which is what keeps `auth` free of the SCM dependency it would otherwise need to verify a PAT
 
 ### Key Decisions
 
@@ -160,13 +161,13 @@ The OCP service CA operator rotates the serving cert/key automatically. `tlsrelo
 
 A user's SCM credential lives in one Secret named after a SHA-256 of their identity (the UID where they have one, the username otherwise, prefixed so the two cannot collide). The name is hashed because it is not a secret: it shows up in audit logs and in `oc get secrets` for anyone with read access to the namespace. Connecting again overwrites that Secret rather than adding another, so a user never accumulates live PATs nobody deletes, and revocation has exactly one thing to delete.
 
-`session.Store.GetCredential` takes the caller's `identity.User` as a parameter, so the check cannot be forgotten at a call site; a mismatch is an error, not a flag the caller inspects. Because the Secret is now found by identity rather than named by the token, the token itself is compared against the one issued, in constant time: without that the caller's own token field would be an oracle. The binding written into the Secret is verified on every read rather than inferred from where the Secret was found, since a deleted and recreated account could hash to the same name. There is no `SessionStore` interface: the store has one implementation, and handler tests run against a real `session.Store` over `k8s.io/client-go/kubernetes/fake` so the ownership and expiry rules they exercise are the ones that ship.
+`auth.Store.GetCredential` takes the caller's `identity.User` as a parameter, so the check cannot be forgotten at a call site; a mismatch is an error, not a flag the caller inspects. Because the Secret is now found by identity rather than named by the token, the token itself is compared against the one issued, in constant time: without that the caller's own token field would be an oracle. The binding written into the Secret is verified on every read rather than inferred from where the Secret was found, since a deleted and recreated account could hash to the same name. There is no `SessionStore` interface: the store has one implementation, and handler tests run against a real `auth.Store` over `k8s.io/client-go/kubernetes/fake` so the ownership and expiry rules they exercise are the ones that ship.
 
 Worth being plain about what this does and does not buy. A stolen session token is useless to a different OpenShift user, and the PAT is never in the browser. It is not two independent secrets: `POST /api/v1/auth/session` re-issues a token against the OpenShift token alone, so reaching the console proxy as a given user is enough to obtain their SCM-backed session. That is the cost of not making the user paste their PAT into every new tab, and it was chosen deliberately.
 
 **The credential outlives the session token, so an expiry is recoverable**
 
-Two TTLs, both absolute and neither sliding. `credentialTTL` (24h) caps how long a stored credential can be used before the user supplies it again. `sessionTTL` (1h) is how long one handle stays usable. The shorter one sitting inside the longer one is what makes "the browser lost its token" a different event from "the user lost their credential": the first is repairable, the second is not.
+Two TTLs, both absolute and neither sliding. `credentialTTL` (7d) caps how long a stored credential can be used before the user supplies it again. `sessionTTL` (24h) is how long one handle stays usable. The shorter one sitting inside the longer one is what makes "the browser lost its token" a different event from "the user lost their credential": the first is repairable, the second is not.
 
 `Store.Reissue` hands a token back to a user who already has a credential stored. An unexpired token is returned **unchanged** rather than rotated, which is not an optimization: two tabs refreshing at once must converge on the same handle, or each would mint its own, invalidate the other's, and the two would refresh each other in a loop.
 
