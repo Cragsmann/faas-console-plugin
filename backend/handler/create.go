@@ -61,9 +61,9 @@ func (h *Handlers) HandleFuncCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, err := h.extractCredentialFromSession(r)
+	credential, err := h.credentialFor(r)
 	if err != nil {
-		writeSessionError(w, err)
+		writeAuthError(w, err)
 		return
 	}
 	ocpToken, ok := extractOCPToken(r)

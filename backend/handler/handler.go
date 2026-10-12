@@ -16,7 +16,7 @@ type Handlers struct {
 	kubeHost             string            // API server URL for dev/test; empty uses in-cluster config
 	externalAPIServerURL string            // external URL embedded in generated kubeconfigs
 	saTokenExpiry        int64             // requested SA token lifetime in seconds
-	sessionStore         *auth.Store       // session token to PAT mapping
+	credentials          *auth.Store       // SCM credentials, keyed by OpenShift identity
 	identityResolver     identity.Resolver // OCP user behind the console's bearer token
 }
 
@@ -38,7 +38,7 @@ func newHTTPError(code int, message string, cause error) error {
 	return &httpError{code: code, message: message, cause: cause}
 }
 
-func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64, sessionStore *auth.Store) (*Handlers, error) {
+func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64, credentials *auth.Store) (*Handlers, error) {
 	var caCert []byte
 	if caPath != "" {
 		var err error
@@ -52,7 +52,7 @@ func New(caPath, kubeHost, externalAPIServerURL string, saTokenExpiry int64, ses
 		kubeHost:             kubeHost,
 		externalAPIServerURL: externalAPIServerURL,
 		saTokenExpiry:        saTokenExpiry,
-		sessionStore:         sessionStore,
+		credentials:          credentials,
 		identityResolver:     identity.NewResolver(kubeHost, caCert),
 	}, nil
 }

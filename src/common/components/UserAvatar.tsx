@@ -26,7 +26,7 @@ import { GithubIcon, UserIcon } from '@patternfly/react-icons';
 import { Ref, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AuthContext } from '../context/AuthProvider';
-import { isSessionActive, login as sessionLogin } from '../clients/sessionClient';
+import { connect } from '../clients/authClient';
 import { errorMessage } from '../utils/utils';
 
 interface UserAvatarProps {
@@ -35,10 +35,10 @@ interface UserAvatarProps {
 
 export function UserAvatar({ enableReconnect }: UserAvatarProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
-  const { user, isConnected, isModalOpen, openModal, closeModal, login, disconnect } =
+  const { user, isAuthenticated, isModalOpen, openModal, closeModal, login, disconnect } =
     useUserAvatar(enableReconnect);
 
-  if (isConnected) {
+  if (isAuthenticated) {
     return <ConnectedMenu name={user.name} avatarUrl={user.avatarUrl} onDisconnect={disconnect} />;
   }
 
@@ -60,17 +60,17 @@ export function UserAvatar({ enableReconnect }: UserAvatarProps) {
 
 function useUserAvatar(enableReconnect: boolean) {
   const { user, isAuthenticated, onLogin, onLogout } = useContext(AuthContext);
-  const [isModalOpen, setIsModalOpen] = useState(() => enableReconnect && !isSessionActive());
+  const [isModalOpen, setIsModalOpen] = useState(() => enableReconnect && !isAuthenticated);
 
   const login = async (pat: string) => {
-    const authUser = await sessionLogin(pat);
+    const authUser = await connect(pat);
     setIsModalOpen(false);
     onLogin(authUser);
   };
 
   return {
     user,
-    isConnected: isAuthenticated && Boolean(user.name),
+    isAuthenticated: isAuthenticated,
     isModalOpen,
     openModal: () => setIsModalOpen(true),
     closeModal: () => setIsModalOpen(false),

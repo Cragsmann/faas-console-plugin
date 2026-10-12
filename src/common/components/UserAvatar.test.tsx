@@ -2,10 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 import { UserAvatar } from './UserAvatar';
-import { SESSION_TOKEN_KEY, USER_KEY } from '../types';
 import { AuthContext } from '../context/AuthProvider';
 import { ReactNode } from 'react';
-import { startSessionFake, endSessionFake, loginStub } from '../testing/sessionClientStub';
+import { connectStub } from '../testing/authClientStub';
 import { BACKEND_API } from '../testing/constants';
 import { server } from '../testing/mswServer';
 
@@ -20,7 +19,7 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
   consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
 }));
 
-const LOGIN_URL = `${BACKEND_API}/api/v1/auth/login`;
+const TOKEN_URL = `${BACKEND_API}/api/v1/auth/github-token`;
 
 const testUser = { name: 'twoGiants', avatarUrl: '' };
 
@@ -28,7 +27,6 @@ function authContext(overrides = {}) {
   return {
     isAuthenticated: false,
     user: testUser,
-    connectionId: 0,
     onLogin: vi.fn(),
     onLogout: vi.fn(),
     ...overrides,
@@ -39,21 +37,13 @@ function renderWithContext(ui: ReactNode, contextValue = authContext()) {
   return render(<AuthContext.Provider value={contextValue}>{ui}</AuthContext.Provider>);
 }
 
-/** Everything sessionStorage holds, for asserting on what is not in it. */
-function storedValues(): (string | null)[] {
-  return Object.keys(sessionStorage).map((key) => sessionStorage.getItem(key));
-}
-
-/** Puts the component in the connected state: authenticated context plus a stored session. */
 function connectedContext(overrides = {}) {
-  startSessionFake();
   return authContext({ isAuthenticated: true, ...overrides });
 }
 
 describe('UserAvatar', () => {
   beforeEach(() => {
-    endSessionFake();
-    loginStub({ response: { token: 'sess_new', login: 'twoGiants', avatarUrl: '' } });
+    connectStub({ response: { login: 'twoGiants', avatarUrl: '' } });
   });
 
   describe('rendering', () => {
@@ -134,16 +124,24 @@ describe('UserAvatar', () => {
   });
 
   describe('modal auto-open', () => {
-    it('opens modal automatically when enableReconnect is true and no session stored', () => {
+    it('opens the modal when the backend holds no credential', () => {
       renderWithContext(<UserAvatar enableReconnect />);
 
       expect(screen.getByText('Personal Access Token')).toBeInTheDocument();
     });
 
-    it('does not auto-open modal when a session is already stored', () => {
-      startSessionFake();
+    it('does not prompt a user when the backend has a credential', () => {
+      renderWithContext(<UserAvatar enableReconnect />, connectedContext());
+
+      expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
+      expect(screen.getByText('twoGiants')).toBeInTheDocument();
+    });
+
+    it('does not reopen the modal after the user dismisses it', async () => {
+      const user = userEvent.setup();
 
       renderWithContext(<UserAvatar enableReconnect />);
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
       expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
     });
@@ -183,31 +181,13 @@ describe('UserAvatar', () => {
       expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
     });
 
-    it('exchanges the PAT for a session and stores the token, not the PAT', async () => {
-      const user = userEvent.setup();
-      const onLogin = vi.fn();
-
-      renderWithContext(<UserAvatar enableReconnect />, authContext({ onLogin }));
-
-      await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_valid');
-      await user.click(screen.getByRole('button', { name: 'Connect' }));
-
-      await waitFor(() => {
-        expect(onLogin).toHaveBeenCalledWith(testUser);
-      });
-
-      expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_new');
-      expect(JSON.parse(sessionStorage.getItem(USER_KEY)!)).toEqual(testUser);
-      expect(storedValues()).not.toContain('ghp_valid');
-    });
-
-    it('sends the PAT to the backend rather than to GitHub', async () => {
+    it('sends the PAT to the backend', async () => {
       const user = userEvent.setup();
       let sentBody: { pat?: string } = {};
       server.use(
-        http.post(LOGIN_URL, async ({ request }) => {
+        http.post(TOKEN_URL, async ({ request }) => {
           sentBody = (await request.json()) as { pat?: string };
-          return HttpResponse.json({ token: 'sess_new', login: 'twoGiants', avatarUrl: '' });
+          return HttpResponse.json({ login: 'twoGiants', avatarUrl: '' });
         }),
       );
 
@@ -223,7 +203,7 @@ describe('UserAvatar', () => {
 
     it('shows error alert when the backend rejects the PAT', async () => {
       const user = userEvent.setup();
-      loginStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
+      connectStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
       renderWithContext(<UserAvatar enableReconnect />);
 
@@ -261,7 +241,7 @@ describe('UserAvatar', () => {
 
     it('clears PAT input and error on cancel', async () => {
       const user = userEvent.setup();
-      loginStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
+      connectStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
       renderWithContext(<UserAvatar enableReconnect />);
 
@@ -280,9 +260,9 @@ describe('UserAvatar', () => {
     it('disables Cancel button while validating', async () => {
       const user = userEvent.setup();
       server.use(
-        http.post(LOGIN_URL, async () => {
+        http.post(TOKEN_URL, async () => {
           await delay('infinite');
-          return HttpResponse.json({ token: 'sess_new', login: 'twoGiants', avatarUrl: '' });
+          return HttpResponse.json({ login: 'twoGiants', avatarUrl: '' });
         }),
       );
 

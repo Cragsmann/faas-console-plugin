@@ -54,10 +54,10 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Create the name of the session RBAC objects
+Create the name of the SCM credential RBAC objects
 */}}
-{{- define "openshift-console-plugin.sessionName" -}}
-{{- printf "%s-session" (include "openshift-console-plugin.name" .) }}
+{{- define "openshift-console-plugin.credentialName" -}}
+{{- printf "%s-credentials" (include "openshift-console-plugin.name" .) }}
 {{- end }}
 
 {{/*

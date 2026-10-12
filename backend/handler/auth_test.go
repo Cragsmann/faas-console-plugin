@@ -16,7 +16,7 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/scm"
 )
 
-var _ = Describe("POST /api/v1/auth/login", func() {
+var _ = Describe("POST /api/v1/auth/github-token", func() {
 	BeforeEach(func() {
 		withSCMStub(&scm.ClientStub{
 			OnGetUser: func(ctx context.Context) (*scm.User, error) {
@@ -26,164 +26,135 @@ var _ = Describe("POST /api/v1/auth/login", func() {
 	})
 
 	// Asserted through the store rather than on what the handler passed it: the
-	// token it just minted must work for its owner and for nobody else.
-	It("binds the session to the OpenShift user that created it", func() {
+	// credential it just wrote must be reachable by its owner and by nobody else.
+	It("binds the credential to the OpenShift user that stored it", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleLogin(w, loginRequest("ghp_valid"))
+		h.HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusCreated))
-		var resp map[string]string
-		Expect(json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
 
-		credential, err := h.sessionStore.GetCredential(context.Background(), resp["token"], testOCPUser)
+		credential, err := h.credentials.GetCredential(context.Background(), testOCPUser)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(credential.Secret).To(Equal("ghp_valid"))
 
-		_, err = h.sessionStore.GetCredential(context.Background(), resp["token"], mallory)
+		_, err = h.credentials.GetCredential(context.Background(), mallory)
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("returns the session token and the GitHub profile, never the PAT", func() {
+	It("returns the GitHub profile, never the token", func() {
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleLogin(w, loginRequest("ghp_valid"))
+		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
 
 		var resp map[string]string
 		Expect(json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
 		Expect(resp).To(HaveKeyWithValue("login", "alice-gh"))
 		Expect(resp).To(HaveKeyWithValue("avatarUrl", "https://example.com/avatar"))
-		Expect(resp).To(HaveLen(3)) // token, login, avatarUrl and nothing else
-		Expect(resp["token"]).NotTo(BeEmpty())
-		Expect(resp["token"]).NotTo(Equal("ghp_valid"))
+		Expect(resp).To(HaveLen(2)) // login, avatarUrl and nothing else
+	})
+
+	It("returns 400 when no token was sent", func() {
+		w := httptest.NewRecorder()
+
+		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest(""))
+
+		Expect(w.Code).To(Equal(http.StatusBadRequest))
+	})
+
+	It("returns 401 when GitHub rejects the token", func() {
+		withSCMStub(&scm.ClientStub{
+			OnGetUser: func(ctx context.Context) (*scm.User, error) { return nil, scm.ErrUnauthorized },
+		})
+		w := httptest.NewRecorder()
+
+		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest("ghp_bad"))
+
+		Expect(w.Code).To(Equal(http.StatusUnauthorized))
+		// A token GitHub refuses is never written, so the caller keeps whatever
+		// they already had rather than losing it to a typo.
+		Expect(credentialSecrets()).To(HaveLen(1))
 	})
 
 	It("returns 401 when the OpenShift token is rejected", func() {
 		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
-		h.HandleLogin(w, loginRequest("ghp_valid"))
+		h.HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 		// Nothing is stored for a caller with no identity to bind to, so the
-		// cluster still holds only the session the test started with.
-		Expect(sessionSecrets()).To(HaveLen(1))
+		// cluster still holds only the credential the test started with.
+		Expect(credentialSecrets()).To(HaveLen(1))
 	})
 
 	// Not 401: the API server being unreachable says nothing about the caller,
-	// and the frontend answers 401 by throwing the session away. A blip must
-	// not cost the user a connection they still have.
+	// and the frontend answers 401 by disconnecting. A blip must not cost the
+	// user a connection they still have.
 	It("returns 503 when the identity cannot be looked up at all", func() {
 		h := failingToResolve(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
-		h.HandleLogin(w, loginRequest("ghp_valid"))
+		h.HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
-		Expect(sessionSecrets()).To(HaveLen(1))
+		Expect(credentialSecrets()).To(HaveLen(1))
 	})
 
 	It("returns 401 when the console forwarded no user token", func() {
 		h := resolvingTo(testOCPUser)
-		req := loginRequest("ghp_valid")
+		req := saveTokenRequest("ghp_valid")
 		req.Header.Del("Authorization")
 		w := httptest.NewRecorder()
 
-		h.HandleLogin(w, req)
+		h.HandleSaveGitHubToken(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
 })
 
-var _ = Describe("POST /api/v1/auth/logout", func() {
-	logoutRequest := func() *http.Request {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
-		authenticate(req)
-		return req
-	}
-
-	It("deletes the session of the user it belongs to", func() {
-		h := resolvingTo(testOCPUser)
-		w := httptest.NewRecorder()
-
-		h.HandleLogout(w, logoutRequest())
-
-		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(sessionSecrets()).To(BeEmpty())
-	})
-
-	// Revocation follows the identity, not the handle. Holding somebody else's
-	// token must not be a way to disconnect their GitHub account.
-	It("leaves the session alone when another user presents the token", func() {
-		h := resolvingTo(mallory)
-		w := httptest.NewRecorder()
-
-		h.HandleLogout(w, logoutRequest())
-
-		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(sessionSecrets()).To(HaveLen(1))
-	})
-
-	// The browser disconnects with whatever it has. An expired or missing handle
-	// is the ordinary case after the session TTL passes, and the user still
-	// expects the credential to be gone.
-	It("revokes the credential even without a session header", func() {
-		h := resolvingTo(testOCPUser)
-		req := logoutRequest()
-		req.Header.Del(sessionHeader)
-		w := httptest.NewRecorder()
-
-		h.HandleLogout(w, req)
-
-		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(sessionSecrets()).To(BeEmpty())
-	})
-
-	It("returns 204 without touching the store when the user cannot be resolved", func() {
-		h := failingToResolve(errors.New("token rejected by the API server"))
-		w := httptest.NewRecorder()
-
-		h.HandleLogout(w, logoutRequest())
-
-		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(sessionSecrets()).To(HaveLen(1))
-	})
-})
-
-var _ = Describe("POST /api/v1/auth/session", func() {
-	// No session header on purpose: the endpoint exists for a browser that has
-	// none, so requiring one would defeat it.
-	sessionRequest := func() *http.Request {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/session", nil)
+var _ = Describe("GET /api/v1/auth/github-token", func() {
+	getRequest := func() *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/github-token", nil)
 		req.Header.Set("Authorization", "Bearer "+testOCPToken)
 		return req
 	}
 
-	It("hands back a working session for a stored credential", func() {
+	// The whole point of keying on identity alone: a browser that has never
+	// seen this credential is connected by its OpenShift token and nothing else.
+	It("reports the GitHub account behind a stored credential", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleResumeSession(w, sessionRequest())
+		h.HandleGetGitHubToken(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var resp map[string]string
 		Expect(json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
 		Expect(resp).To(HaveKeyWithValue("login", "tester"))
+		Expect(resp).To(HaveLen(2)) // login, avatarUrl and nothing else
+	})
 
-		credential, err := h.sessionStore.GetCredential(context.Background(), resp["token"], testOCPUser)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(credential.Secret).To(Equal("test-pat"))
+	// The stored token answers requests on the backend; handing it back to the
+	// browser would undo the entire reason it lives in a Secret.
+	It("never returns the token itself", func() {
+		h := resolvingTo(testOCPUser)
+		w := httptest.NewRecorder()
+
+		h.HandleGetGitHubToken(w, getRequest())
+
+		Expect(w.Body.String()).NotTo(ContainSubstring("test-pat"))
 	})
 
 	// A caller with nothing stored is not an authentication failure: they are
-	// known, they have simply never connected. The frontend turns every 401 into
-	// "the session is gone" and retries here, so answering 401 would recurse.
+	// known, they have simply never connected. The frontend reads 404 as "show
+	// the connect prompt" rather than "something went wrong".
 	It("returns 404 when the user has no stored credential", func() {
 		h := resolvingTo(mallory)
 		w := httptest.NewRecorder()
 
-		h.HandleResumeSession(w, sessionRequest())
+		h.HandleGetGitHubToken(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNotFound))
 	})
@@ -192,24 +163,65 @@ var _ = Describe("POST /api/v1/auth/session", func() {
 		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
-		h.HandleResumeSession(w, sessionRequest())
+		h.HandleGetGitHubToken(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
 
-	// This endpoint is what the frontend calls to recover a lost token, so
-	// answering 401 here would send it straight back round to itself.
+	// Not 404: the frontend reads that as "there is nothing stored" and shows
+	// the connect prompt. Being unable to read the credential is not the same
+	// as there not being one.
 	It("returns 503 when the identity cannot be looked up at all", func() {
 		h := failingToResolve(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
-		h.HandleResumeSession(w, sessionRequest())
+		h.HandleGetGitHubToken(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 
-// mallory is a second OpenShift user holding a session token that is not theirs.
+var _ = Describe("DELETE /api/v1/auth/github-token", func() {
+	deleteRequest := func() *http.Request {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/github-token", nil)
+		authenticate(req)
+		return req
+	}
+
+	It("deletes the credential of the user it belongs to", func() {
+		h := resolvingTo(testOCPUser)
+		w := httptest.NewRecorder()
+
+		h.HandleDeleteGitHubToken(w, deleteRequest())
+
+		Expect(w.Code).To(Equal(http.StatusNoContent))
+		Expect(credentialSecrets()).To(BeEmpty())
+	})
+
+	// Revocation follows the identity. Reaching the backend as one user must
+	// not be a way to disconnect somebody else's GitHub account.
+	It("leaves another user's credential alone", func() {
+		h := resolvingTo(mallory)
+		w := httptest.NewRecorder()
+
+		h.HandleDeleteGitHubToken(w, deleteRequest())
+
+		Expect(w.Code).To(Equal(http.StatusNoContent))
+		Expect(credentialSecrets()).To(HaveLen(1))
+	})
+
+	It("returns 204 without touching the store when the user cannot be resolved", func() {
+		h := failingToResolve(errors.New("token rejected by the API server"))
+		w := httptest.NewRecorder()
+
+		h.HandleDeleteGitHubToken(w, deleteRequest())
+
+		Expect(w.Code).To(Equal(http.StatusNoContent))
+		Expect(credentialSecrets()).To(HaveLen(1))
+	})
+})
+
+// mallory is a second OpenShift user, who has no credential of their own.
 var mallory = identity.User{Username: "mallory", UID: "mallory-uid"}
 
 // resolvingTo builds handlers whose requests authenticate as user.
@@ -228,12 +240,9 @@ func failingToResolve(cause error) *Handlers {
 	}})
 }
 
-func loginRequest(pat string) *http.Request {
+func saveTokenRequest(pat string) *http.Request {
 	body, err := json.Marshal(map[string]string{"pat": pat})
 	Expect(err).NotTo(HaveOccurred())
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/login", bytes.NewBuffer(body))
-	authenticate(req)
-	// Logging in is how a session is obtained, so there is none to send yet.
-	req.Header.Del(sessionHeader)
-	return req
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/github-token", bytes.NewBuffer(body))
+	return authenticate(req)
 }

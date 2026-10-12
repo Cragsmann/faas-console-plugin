@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { useContext } from 'react';
 import { AuthContext, AuthProvider } from './AuthProvider';
-import { SESSION_TOKEN_KEY } from '../types';
-import { startSessionFake, endSessionFake, resumeSessionStub } from '../testing/sessionClientStub';
+import { AUTH_EXPIRED_EVENT } from '../types';
+import { connectionStub, noConnectionStub } from '../testing/authClientStub';
 
 const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
 
@@ -20,59 +20,60 @@ function ConnectionState() {
   return <div>{isAuthenticated ? `connected as ${user.name}` : 'not connected'}</div>;
 }
 
+function renderProvider() {
+  render(
+    <AuthProvider>
+      <ConnectionState />
+    </AuthProvider>,
+  );
+}
+
 describe('AuthProvider', () => {
-  beforeEach(() => {
-    endSessionFake();
-  });
+  // The fix this whole change is for: a user whose PAT is already in a Secret
+  // opens the console and is connected, having typed nothing.
+  it('connects a user whose credential the backend already holds', async () => {
+    connectionStub();
 
-  it('resumes the session when the tab has no token', async () => {
-    resumeSessionStub();
-
-    render(
-      <AuthProvider>
-        <ConnectionState />
-      </AuthProvider>,
-    );
+    renderProvider();
 
     expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
-    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('sess_test');
   });
 
-  it('stays disconnected when the backend has no credential to resume', async () => {
-    resumeSessionStub({ errorResponse: { message: 'no stored credential', status: 404 } });
+  it('stays disconnected when the backend holds no credential', async () => {
+    noConnectionStub();
 
-    render(
-      <AuthProvider>
-        <ConnectionState />
-      </AuthProvider>,
-    );
+    renderProvider();
 
     await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
   });
 
-  it('survives a resume the backend could not answer', async () => {
-    resumeSessionStub({
-      errorResponse: { message: 'session store unavailable', status: 503 },
-    });
+  it('stays disconnected when the backend cannot answer', async () => {
+    connectionStub({ errorResponse: { message: 'credential store unavailable', status: 503 } });
 
-    render(
-      <AuthProvider>
-        <ConnectionState />
-      </AuthProvider>,
-    );
+    renderProvider();
 
     await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
   });
 
-  it('does not ask for a session when the tab already has one', () => {
-    startSessionFake();
+  // Children must not mount before the answer arrives, or they would act on
+  // "not connected" when the backend is about to say otherwise.
+  it('holds its children back until the backend answers', () => {
+    connectionStub();
 
-    render(
-      <AuthProvider>
-        <ConnectionState />
-      </AuthProvider>,
-    );
+    renderProvider();
 
-    expect(screen.getByText('connected as twoGiants')).toBeInTheDocument();
+    expect(screen.queryByText('not connected')).not.toBeInTheDocument();
+    expect(screen.queryByText(/connected as/)).not.toBeInTheDocument();
+  });
+
+  it('disconnects when a request reports the credential is gone', async () => {
+    connectionStub();
+
+    renderProvider();
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+
+    await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
   });
 });
