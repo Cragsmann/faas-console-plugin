@@ -18,9 +18,9 @@ import (
 var validGitRef = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._/-]*[a-zA-Z0-9])?$`)
 
 func (h *Handlers) HandleGetFiles(w http.ResponseWriter, r *http.Request) {
-	credential, err := h.extractCredentialFromSession(r)
+	credential, err := h.credentialFor(r)
 	if err != nil {
-		writeSessionError(w, err)
+		writeAuthError(w, err)
 		return
 	}
 
@@ -69,9 +69,9 @@ type putFilesTarget struct {
 }
 
 func (h *Handlers) HandlePutFiles(w http.ResponseWriter, r *http.Request) {
-	credential, err := h.extractCredentialFromSession(r)
+	credential, err := h.credentialFor(r)
 	if err != nil {
-		writeSessionError(w, err)
+		writeAuthError(w, err)
 		return
 	}
 

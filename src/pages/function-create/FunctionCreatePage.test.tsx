@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router';
 import FunctionCreatePage from './FunctionCreatePage';
 import { BACKEND_API } from '../../common/testing/constants';
-import { startSessionFake, endSessionFake } from '../../common/testing/sessionClientStub';
+import { connectionStub, noConnectionStub } from '../../common/testing/authClientStub';
 import { server } from '../../common/testing/mswServer';
 
 const mockNavigate = vi.fn();
@@ -52,7 +52,10 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+// The form appears only once the backend has confirmed a stored credential,
+// so every flow through it waits for that answer first.
 const fillForm = async (user: ReturnType<typeof userEvent.setup>) => {
+  await screen.findByRole('textbox', { name: /Owner/ });
   await user.type(screen.getByRole('textbox', { name: /Repository/ }), 'my-repo');
   await user.type(screen.getByRole('textbox', { name: /Branch/ }), 'main');
   await user.type(screen.getByRole('textbox', { name: /^Name$/ }), 'my-func');
@@ -61,22 +64,17 @@ const fillForm = async (user: ReturnType<typeof userEvent.setup>) => {
 
 describe('FunctionCreatePage', () => {
   beforeEach(() => {
-    endSessionFake();
-    startSessionFake();
+    connectionStub();
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  afterAll(() => {
-    endSessionFake();
-  });
-
-  it('renders CreateFunctionForm', () => {
+  it('renders CreateFunctionForm for a user the backend already connected', async () => {
     renderPage();
 
-    expect(screen.getByRole('textbox', { name: /Owner/ })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: /Owner/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Create/ })).toBeInTheDocument();
   });
 
@@ -113,19 +111,19 @@ describe('FunctionCreatePage', () => {
     });
   });
 
-  it('renders UserAvatar in header', () => {
-    endSessionFake();
+  it('renders UserAvatar in header', async () => {
+    noConnectionStub();
     renderPage();
 
-    expect(screen.getByTestId('user-avatar')).toBeInTheDocument();
+    expect(await screen.findByTestId('user-avatar')).toBeInTheDocument();
   });
 
-  it('shows warning and hides form when no PAT is set', () => {
-    endSessionFake();
+  it('shows warning and hides form when the backend holds no credential', async () => {
+    noConnectionStub();
     renderPage();
 
     expect(
-      screen.getByText(/A GitHub Personal Access Token is required to create functions/),
+      await screen.findByText(/A GitHub Personal Access Token is required to create functions/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Owner/ })).not.toBeInTheDocument();
   });

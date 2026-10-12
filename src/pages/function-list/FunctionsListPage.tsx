@@ -139,14 +139,14 @@ function useFunctionListPage(): {
   errors: string[];
   showNamespace: boolean;
 } {
-  const { isAuthenticated, connectionId } = useContext(AuthContext);
+  const { isAuthenticated, user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [namespace] = useActiveNamespace();
   const [refreshKey, setRefreshKey] = useState(0);
 
   const { functions, loaded, refreshing, errors } = useFunctions(
     namespace,
-    isAuthenticated ? connectionId : undefined,
+    isAuthenticated ? user.name : undefined,
     refreshKey,
   );
 

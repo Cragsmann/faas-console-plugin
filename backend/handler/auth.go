@@ -14,26 +14,14 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/scm"
 )
 
-const sessionHeader = "X-FUNC-SESSION"
-
-// errNoSessionToken means the request carried no session handle at all, which
-// is the caller's problem rather than a sign anything is wrong here.
-var errNoSessionToken = errors.New("no session token in the request")
-
-func (h *Handlers) extractCredentialFromSession(r *http.Request) (auth.Credential, error) {
-	// Deliberately not Authorization: that header carries the OCP user token
-	// forwarded by the console proxy (see extractOCPToken).
-	token := r.Header.Get(sessionHeader)
-	if token == "" {
-		return auth.Credential{}, fmt.Errorf("%w: no %s header", errNoSessionToken, sessionHeader)
-	}
-
+// credentialFor finds the SCM credential belonging to whoever sent r. The
+// OpenShift identity the console proxy forwards is the only key.
+func (h *Handlers) credentialFor(r *http.Request) (auth.Credential, error) {
 	user, err := h.currentUser(r)
 	if err != nil {
 		return auth.Credential{}, err
 	}
-
-	return h.sessionStore.GetCredential(r.Context(), token, user)
+	return h.credentials.GetCredential(r.Context(), user)
 }
 
 func (h *Handlers) currentUser(r *http.Request) (identity.User, error) {
@@ -58,24 +46,24 @@ func extractOCPToken(r *http.Request) (string, bool) {
 	return token, token != ""
 }
 
-func writeSessionError(w http.ResponseWriter, err error) {
+// writeAuthError is the only source of 401 on the request path, which is what
+// lets the frontend read that one status as "connect to GitHub".
+func writeAuthError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, errNoSessionToken),
-		errors.Is(err, identity.ErrUnauthenticated),
-		errors.Is(err, auth.ErrInvalidSession),
+	case errors.Is(err, identity.ErrUnauthenticated),
 		errors.Is(err, auth.ErrNoCredential):
-		slog.Warn("rejecting request without a usable session", "err", err)
+		slog.Warn("rejecting request without a usable credential", "err", err)
 		writeError(w, http.StatusUnauthorized, "authentication required")
 	default:
-		slog.Error("could not resolve the caller's session", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "session store unavailable")
+		slog.Error("could not resolve the caller's credential", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "credential store unavailable")
 	}
 }
 
-func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleSaveGitHubToken(w http.ResponseWriter, r *http.Request) {
 	ocpUser, err := h.currentUser(r)
 	if err != nil {
-		writeSessionError(w, err)
+		writeAuthError(w, err)
 		return
 	}
 
@@ -92,7 +80,8 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify PAT by fetching the user from GitHub
+	// Verify the token by fetching the user from GitHub, so a credential that
+	// cannot work is never written over one that still does.
 	scmClient, err := config.SCMRegistry.NewClient(scm.DefaultPlatform, req.PAT)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create scm client")
@@ -109,65 +98,57 @@ func (h *Handlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.sessionStore.CreateSession(r.Context(), ocpUser, auth.Credential{
+	err = h.credentials.SaveCredential(r.Context(), ocpUser, auth.Credential{
 		Owner:     user.Login,
 		AvatarURL: user.AvatarURL,
 		Secret:    req.PAT,
 		Type:      auth.CredentialTypePAT,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create session")
+		slog.Error("failed to store the github token", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to store credential")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{
-		"token":     token,
-		"login":     user.Login,
-		"avatarUrl": user.AvatarURL,
-	})
+	writeJSON(w, http.StatusCreated, githubAccount(user.Login, user.AvatarURL))
 }
 
-func (h *Handlers) HandleResumeSession(w http.ResponseWriter, r *http.Request) {
-	ocpUser, err := h.currentUser(r)
-	if err != nil {
-		writeSessionError(w, err)
-		return
-	}
-
-	sess, err := h.sessionStore.Reissue(r.Context(), ocpUser)
+func (h *Handlers) HandleGetGitHubToken(w http.ResponseWriter, r *http.Request) {
+	credential, err := h.credentialFor(r)
 	if errors.Is(err, auth.ErrNoCredential) {
 		writeError(w, http.StatusNotFound, "no stored credential")
 		return
 	}
 	if err != nil {
-		// Not 404: the frontend treats that as "there is nothing stored" and
-		// disconnects. Being unable to read the credential is not the same as
-		// there not being one.
-		slog.Error("failed to reissue session", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "session store unavailable")
+		if errors.Is(err, identity.ErrUnauthenticated) {
+			writeAuthError(w, err)
+			return
+		}
+		slog.Error("failed to read the stored credential", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "credential store unavailable")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"token":     sess.Token,
-		"login":     sess.Owner,
-		"avatarUrl": sess.AvatarURL,
-	})
+	writeJSON(w, http.StatusOK, githubAccount(credential.Owner, credential.AvatarURL))
 }
 
-func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleDeleteGitHubToken(w http.ResponseWriter, r *http.Request) {
 	ocpUser, err := h.currentUser(r)
 	if err != nil {
-		// Nothing to revoke that we can identify. The browser clears its own
-		// state regardless, so this is not worth failing the request over.
-		slog.Warn("logout without a resolvable OpenShift user", "err", err)
+		// Nothing to revoke that we can identify. The browser disconnects
+		// regardless, so this is not worth failing the request over.
+		slog.Warn("disconnect without a resolvable OpenShift user", "err", err)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	if err := h.sessionStore.DeleteSession(r.Context(), ocpUser); err != nil {
-		slog.Error("failed to delete session", "err", err)
+	if err := h.credentials.DeleteCredential(r.Context(), ocpUser); err != nil {
+		slog.Error("failed to delete the stored credential", "err", err)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func githubAccount(login, avatarURL string) map[string]string {
+	return map[string]string{"login": login, "avatarUrl": avatarURL}
 }

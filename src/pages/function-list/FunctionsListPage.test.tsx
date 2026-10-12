@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router';
-import { startSessionFake, endSessionFake, logoutStub } from '../../common/testing/sessionClientStub';
+import { connectionStub, noConnectionStub, disconnectStub } from '../../common/testing/authClientStub';
 import {
   listFunctionsStub,
   receiveWorkflowRunEventsStub,
@@ -48,8 +48,7 @@ describe('FunctionsListPage', () => {
   const funcName = 'my-func';
 
   beforeEach(() => {
-    endSessionFake();
-    startSessionFake();
+    connectionStub();
   });
 
   afterEach(() => {
@@ -57,8 +56,60 @@ describe('FunctionsListPage', () => {
     act(() => sdkTestDoubles.reset());
   });
 
-  afterAll(() => {
-    endSessionFake();
+  // End to end through the real AuthProvider: a stored credential means the
+  // page comes up connected, with no PAT prompt in the user's way.
+  it('connects automatically when the backend already holds a credential', async () => {
+    listFunctionsStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('twoGiants')).toBeInTheDocument();
+    expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
+  });
+
+  it('prompts for a PAT when the backend holds nothing', async () => {
+    noConnectionStub();
+    listFunctionsStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Personal Access Token')).toBeInTheDocument();
+  });
+
+  // End to end through the real AuthProvider: a stored credential means the
+  // page comes up connected, with no PAT prompt in the user's way.
+  it('connects automatically when the backend already holds a credential', async () => {
+    listFunctionsStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('twoGiants')).toBeInTheDocument();
+    expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
+  });
+
+  it('prompts for a PAT when the backend holds nothing', async () => {
+    noConnectionStub();
+    listFunctionsStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Personal Access Token')).toBeInTheDocument();
   });
 
   describe('Visible page elements and loading states', () => {
@@ -102,7 +153,7 @@ describe('FunctionsListPage', () => {
       expect(await screen.findByText(funcName)).toBeInTheDocument();
     });
 
-    it('renders UserAvatar in header', () => {
+    it('renders UserAvatar in header', async () => {
       listFunctionsStub();
 
       render(
@@ -111,7 +162,7 @@ describe('FunctionsListPage', () => {
         </MemoryRouter>,
       );
 
-      expect(screen.getByText('twoGiants')).toBeInTheDocument();
+      expect(await screen.findByText('twoGiants')).toBeInTheDocument();
     });
 
     it('renders the setup guide button in the list description', async () => {
@@ -130,7 +181,7 @@ describe('FunctionsListPage', () => {
   it('clears the listed functions when the user disconnects', async () => {
     listFunctionsStub({ responses: [functionMetadata({ repoName: funcName })] });
     sdkTestDoubles.setWatchFixtures(sdkTestDoubles.funcFixture(funcName));
-    logoutStub();
+    disconnectStub();
 
     render(
       <MemoryRouter>
@@ -163,7 +214,7 @@ describe('FunctionsListPage', () => {
     });
 
     it('does not call backend API when not authenticated', async () => {
-      endSessionFake();
+      noConnectionStub();
       render(
         <MemoryRouter>
           <FunctionsListPage />
@@ -176,7 +227,7 @@ describe('FunctionsListPage', () => {
     });
 
     it('empty state receives hint and isCreateDisabled when not authenticated', async () => {
-      endSessionFake();
+      noConnectionStub();
       render(
         <MemoryRouter>
           <FunctionsListPage />
