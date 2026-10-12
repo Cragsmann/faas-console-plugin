@@ -2,10 +2,10 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import {
-  startSessionFake,
-  endSessionFake,
-  logoutStub,
-} from '../../common/testing/sessionClientStub';
+  connectionStub,
+  noConnectionStub,
+  disconnectStub,
+} from '../../common/testing/authClientStub';
 import { listFunctionsStub } from '../../common/testing/functionsClientStub';
 import { repoListItem } from '../../common/testing/testData';
 import { FunctionListItem } from '../../common/types';
@@ -48,16 +48,39 @@ describe('FunctionsListPage', () => {
   const funcName = 'my-func';
 
   beforeEach(() => {
-    endSessionFake();
-    startSessionFake();
+    connectionStub();
   });
 
   afterEach(() => {
     act(() => sdkTestDoubles.reset());
   });
 
-  afterAll(() => {
-    endSessionFake();
+  // End to end through the real AuthProvider: a stored credential means the
+  // page comes up connected, with no PAT prompt in the user's way.
+  it('connects automatically when the backend already holds a credential', async () => {
+    listFunctionsStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('twoGiants')).toBeInTheDocument();
+    expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
+  });
+
+  it('prompts for a PAT when the backend holds nothing', async () => {
+    noConnectionStub();
+    listFunctionsStub();
+
+    render(
+      <MemoryRouter>
+        <FunctionsListPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Personal Access Token')).toBeInTheDocument();
   });
 
   it('renders a spinner while loading', () => {
@@ -151,7 +174,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('does not call backend API when not authenticated', async () => {
-    endSessionFake();
+    noConnectionStub();
     render(
       <MemoryRouter>
         <FunctionsListPage />
@@ -166,7 +189,7 @@ describe('FunctionsListPage', () => {
   it('clears the listed functions when the user disconnects', async () => {
     listFunctionsStub({ responses: [repoListItem({ repoName: funcName, name: funcName })] });
     sdkTestDoubles.setWatchFixtures(sdkTestDoubles.funcFixture(funcName));
-    logoutStub();
+    disconnectStub();
 
     render(
       <MemoryRouter>
@@ -183,7 +206,7 @@ describe('FunctionsListPage', () => {
     expect(screen.getByRole('button', { name: 'Connect to GitHub' })).toBeInTheDocument();
   });
 
-  it('renders UserAvatar in header', () => {
+  it('renders UserAvatar in header', async () => {
     listFunctionsStub();
 
     render(
@@ -192,7 +215,7 @@ describe('FunctionsListPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('twoGiants')).toBeInTheDocument();
+    expect(await screen.findByText('twoGiants')).toBeInTheDocument();
   });
 
   it('renders the setup guide button in the list description', async () => {
@@ -250,7 +273,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('empty state receives hint and isCreateDisabled when not authenticated', async () => {
-    endSessionFake();
+    noConnectionStub();
     render(
       <MemoryRouter>
         <FunctionsListPage />

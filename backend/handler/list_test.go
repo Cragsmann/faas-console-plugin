@@ -298,12 +298,14 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
 
-	It("returns 401 for an unknown or expired session token", func() {
+	// 401 is what the frontend reads as "connect to GitHub", and an expired or
+	// never-stored credential is exactly that: the caller is known, they just
+	// have nothing the backend can use on their behalf.
+	It("returns 401 when the user has no stored credential", func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/list", nil)
 		authenticate(req)
-		req.Header.Set(sessionHeader, "expired-session")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleListFunctions(w, req)
+		resolvingTo(mallory).HandleListFunctions(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})

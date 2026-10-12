@@ -206,11 +206,10 @@ var _ = Describe("POST /api/v1/func/create", func() {
 		}, http.StatusBadGateway),
 	)
 
-	It("rejects requests without a session header", func() {
-		h := testHandlers(Handlers{})
+	It("rejects requests from a user with no stored credential", func() {
+		h := resolvingTo(mallory)
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
 		authenticate(req)
-		req.Header.Del(sessionHeader)
 		w := httptest.NewRecorder()
 		h.HandleFuncCreate(w, req)
 

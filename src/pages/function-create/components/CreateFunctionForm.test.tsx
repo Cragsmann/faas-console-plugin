@@ -12,7 +12,6 @@ const testUser: AuthUser = { name: 'testuser', avatarUrl: '' };
 const authContext = {
   isAuthenticated: true,
   user: testUser,
-  connectionId: 0,
   onLogin: vi.fn(),
   onLogout: vi.fn(),
 };

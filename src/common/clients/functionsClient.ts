@@ -1,5 +1,5 @@
 import { isAllNamespacesKey } from '@openshift-console/dynamic-plugin-sdk';
-import { sessionFetch, sessionFetchJSON } from './sessionClient';
+import { customFetch, customFetchJSON } from './authClient';
 import { CreateFunctionRequest, FileEntry, FunctionListItem, PROXY_BASE } from '../types';
 
 export async function listFunctions(namespace: string): Promise<FunctionListItem[]> {
@@ -7,11 +7,11 @@ export async function listFunctions(namespace: string): Promise<FunctionListItem
     ? '?all=true'
     : `?namespace=${encodeURIComponent(namespace)}`;
 
-  return sessionFetchJSON(`${PROXY_BASE}/api/v1/func/list${query}`);
+  return customFetchJSON(`${PROXY_BASE}/api/v1/func/list${query}`);
 }
 
 export async function createFunction(data: CreateFunctionRequest): Promise<void> {
-  await sessionFetch(`${PROXY_BASE}/api/v1/func/create`, {
+  await customFetch(`${PROXY_BASE}/api/v1/func/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -20,7 +20,7 @@ export async function createFunction(data: CreateFunctionRequest): Promise<void>
 
 export async function getFiles(owner: string, name: string, ref?: string): Promise<FileEntry[]> {
   const query = ref ? `?ref=${encodeURIComponent(ref)}` : '';
-  return sessionFetchJSON(
+  return customFetchJSON(
     `${PROXY_BASE}/api/v1/func/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/files${query}`,
   );
 }
@@ -32,7 +32,7 @@ export async function putFiles(
   message: string,
   branch: string,
 ): Promise<void> {
-  await sessionFetch(
+  await customFetch(
     `${PROXY_BASE}/api/v1/func/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/files`,
     {
       method: 'PUT',

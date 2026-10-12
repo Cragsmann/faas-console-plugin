@@ -27,11 +27,11 @@ import (
 
 const (
 	defaultCAPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	// defaultSessionNamespace is where the chart installs the plugin, and so
+	// defaultCredentialNamespace is where the chart installs the plugin, and so
 	// where its Secrets belong. It is the answer for local runs only: in the pod
 	// POD_NAMESPACE reports where the chart actually went and wins. There is no
-	// third way to set it, so dev sessions always land in one predictable place.
-	defaultSessionNamespace = "console-functions-plugin"
+	// third way to set it, so dev runs always land in one predictable place.
+	defaultCredentialNamespace = "console-functions-plugin"
 )
 
 //go:embed static/*
@@ -78,31 +78,31 @@ func main() {
 
 	// A non-empty --kube-host means the backend runs outside the cluster, on a
 	// developer's laptop.
-	cfg, err := sessionRESTConfig(*kubeHost != "")
+	cfg, err := credentialRESTConfig(*kubeHost != "")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	namespace := os.Getenv("POD_NAMESPACE")
 	if namespace == "" {
-		namespace = defaultSessionNamespace
+		namespace = defaultCredentialNamespace
 	}
-	sessionStore, err := auth.NewStore(cfg, namespace)
+	credentials, err := auth.NewStore(cfg, namespace)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Storing sessions as Secrets in namespace %q", namespace)
+	log.Printf("Storing SCM credentials as Secrets in namespace %q", namespace)
 
-	h, err := handler.New(*caPath, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, sessionStore)
+	h, err := handler.New(*caPath, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, credentials)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
-	mux.HandleFunc("POST /api/v1/auth/login", h.HandleLogin)
-	mux.HandleFunc("POST /api/v1/auth/session", h.HandleResumeSession)
-	mux.HandleFunc("POST /api/v1/auth/logout", h.HandleLogout)
+	mux.HandleFunc("POST /api/v1/auth/github-token", h.HandleSaveGitHubToken)
+	mux.HandleFunc("GET /api/v1/auth/github-token", h.HandleGetGitHubToken)
+	mux.HandleFunc("DELETE /api/v1/auth/github-token", h.HandleDeleteGitHubToken)
 	mux.HandleFunc("GET /api/v1/func/list", h.HandleListFunctions)
 	mux.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
 	mux.HandleFunc("PUT /api/v1/func/{owner}/{name}/files", h.HandlePutFiles)
@@ -149,10 +149,10 @@ func main() {
 	}
 }
 
-// sessionRESTConfig builds the client config the session store talks to the
-// cluster with. Outside the pod there is no ServiceAccount token to read, so a
+// credentialRESTConfig builds the client config the credential store talks to
+// the cluster with. Outside the pod there is no ServiceAccount token to read, so a
 // developer's kubeconfig stands in for it; both point at a real cluster.
-func sessionRESTConfig(dev bool) (*rest.Config, error) {
+func credentialRESTConfig(dev bool) (*rest.Config, error) {
 	var cfg *rest.Config
 	var err error
 	if dev {

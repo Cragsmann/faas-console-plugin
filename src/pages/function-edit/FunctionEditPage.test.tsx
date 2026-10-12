@@ -6,7 +6,7 @@ import {
   listFunctionsStub,
   putFilesStub,
 } from '../../common/testing/functionsClientStub';
-import { endSessionFake, startSessionFake } from '../../common/testing/sessionClientStub';
+import { connectionStub } from '../../common/testing/authClientStub';
 import { repoListItem } from '../../common/testing/testData';
 import { FileEntry } from '../../common/types';
 import FunctionEditPage from './FunctionEditPage';
@@ -67,12 +67,7 @@ function renderEditPage(name: string) {
 
 describe('FunctionEditPage', () => {
   beforeEach(() => {
-    endSessionFake();
-    startSessionFake();
-  });
-
-  afterAll(() => {
-    endSessionFake();
+    connectionStub();
   });
 
   it('shows loading state in tree while fetching files', async () => {
@@ -86,7 +81,9 @@ describe('FunctionEditPage', () => {
 
     renderEditPage('my-func');
 
-    expect(screen.getByText('Loading source...')).toBeInTheDocument();
+    // AuthProvider holds its children back until the backend says whether a
+    // credential is stored, so the tree mounts a tick after render.
+    expect(await screen.findByText('Loading source...')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save & Deploy/ })).toBeDisabled();
 
     continueWithRequest();

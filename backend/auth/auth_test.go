@@ -42,10 +42,9 @@ var _ = Describe("Store", func() {
 		store = newTestStore()
 	})
 
-	Describe("CreateSession", func() {
+	Describe("Save", func() {
 		It("stores the secret in the configured namespace", func() {
-			_, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(store.SaveCredential(ctx, alice, alicePAT)).To(Succeed())
 
 			secret, err := store.client.CoreV1().Secrets(testNamespace).Get(ctx, secretName(alice), metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
@@ -58,8 +57,7 @@ var _ = Describe("Store", func() {
 		// holds and whose account it is without trying it.
 		It("records the credential type and owner", func() {
 			oauth := Credential{Owner: "alice-gh", Secret: "gho_secret", Type: CredentialTypeOAuth}
-			_, err := store.CreateSession(ctx, alice, oauth)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(store.SaveCredential(ctx, alice, oauth)).To(Succeed())
 
 			data := readSecretData(store, alice)
 			Expect(data.Type).To(Equal(CredentialTypeOAuth))
@@ -68,39 +66,32 @@ var _ = Describe("Store", func() {
 		})
 
 		It("requires an OpenShift user to bind to", func() {
-			_, err := store.CreateSession(ctx, identity.User{}, alicePAT)
-			Expect(err).To(HaveOccurred())
+			Expect(store.SaveCredential(ctx, identity.User{}, alicePAT)).NotTo(Succeed())
 		})
 
 		// Reconnecting must not orphan the previous Secret: it would still hold
 		// a live PAT and nothing would ever delete it.
 		It("replaces an existing credential rather than adding another", func() {
-			first, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(store.SaveCredential(ctx, alice, alicePAT)).To(Succeed())
 
-			second := Credential{Owner: "alice-gh", Secret: "ghp_rotated", Type: CredentialTypePAT}
-			secondToken, err := store.CreateSession(ctx, alice, second)
-			Expect(err).NotTo(HaveOccurred())
+			rotated := Credential{Owner: "alice-gh", Secret: "ghp_rotated", Type: CredentialTypePAT}
+			Expect(store.SaveCredential(ctx, alice, rotated)).To(Succeed())
 
 			secrets, err := store.client.CoreV1().Secrets(testNamespace).List(ctx, metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(secrets.Items).To(HaveLen(1), "a user should own one secret")
 
-			_, err = store.GetCredential(ctx, first, alice)
-			Expect(err).To(MatchError(ErrInvalidSession), "the replaced token should stop working")
-
-			credential, err := store.GetCredential(ctx, secondToken, alice)
+			credential, err := store.GetCredential(ctx, alice)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential.Secret).To(Equal("ghp_rotated"))
 		})
 	})
 
-	Describe("GetCredential", func() {
+	Describe("Get", func() {
 		It("returns the stored credential", func() {
-			token, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(store.SaveCredential(ctx, alice, alicePAT)).To(Succeed())
 
-			credential, err := store.GetCredential(ctx, token, alice)
+			credential, err := store.GetCredential(ctx, alice)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential.Secret).To(Equal("ghp_secret"))
 		})
@@ -109,132 +100,28 @@ var _ = Describe("Store", func() {
 		// trying it, which is the whole reason this returns a Credential rather
 		// than the bare string it holds.
 		It("returns the type and owner alongside the secret", func() {
-			token, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(store.SaveCredential(ctx, alice, alicePAT)).To(Succeed())
 
-			credential, err := store.GetCredential(ctx, token, alice)
+			credential, err := store.GetCredential(ctx, alice)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential.Type).To(Equal(CredentialTypePAT))
 			Expect(credential.Owner).To(Equal("alice-gh"))
 			Expect(credential.AvatarURL).To(Equal("https://avatars/alice"))
 		})
 
-		It("rejects a token presented by a different OpenShift user", func() {
-			token, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
-
-			_, err = store.GetCredential(ctx, token, mallory)
-			Expect(err).To(HaveOccurred())
-
-			// The rightful owner keeps the credential: a stolen token must not
-			// be a way to revoke somebody else's.
-			_, err = store.GetCredential(ctx, token, alice)
-			Expect(err).NotTo(HaveOccurred(), "owner should still reach their credential")
-		})
-
-		// The Secret is found by identity, not by token, so the token itself has
-		// to be checked against the one that was issued. Without that check any
-		// string would unlock the caller's own credential.
-		It("rejects a token that was never issued", func() {
-			_, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
-
-			_, err = store.GetCredential(ctx, "nosuchtoken", alice)
-			Expect(err).To(MatchError(ErrInvalidSession))
-		})
-
 		It("reports ErrNoCredential for a user with nothing stored", func() {
-			_, err := store.GetCredential(ctx, "nosuchtoken", alice)
+			_, err := store.GetCredential(ctx, alice)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 
-		It("rejects an expired session token but leaves the credential reissuable", func() {
-			store = newTestStore(secretFor(alice, func(d *secretData) {
-				d.SessionExpiresAt = time.Now().Add(-time.Minute)
-			}))
+		// The OpenShift identity is now the only key, so the binding written
+		// into the Secret is what has to be checked. It is verified on every
+		// read rather than inferred from where the Secret was found, because a
+		// deleted and recreated account could hash to the same name.
+		It("refuses a credential bound to a different OpenShift user", func() {
+			store = newTestStore(secretAt(mallory, alice))
 
-			_, err := store.GetCredential(ctx, "issued-token", alice)
-			Expect(err).To(MatchError(ErrInvalidSession))
-
-			// The credential outlives the token on purpose: that is what makes a
-			// reissue possible instead of asking for the PAT again.
-			_, err = store.Reissue(ctx, alice)
-			Expect(err).NotTo(HaveOccurred(), "the credential should survive an expired session token")
-		})
-
-		It("rejects and deletes an expired credential", func() {
-			store = newTestStore(secretFor(alice, func(d *secretData) {
-				d.ExpiresAt = time.Now().Add(-time.Minute)
-			}))
-
-			_, err := store.GetCredential(ctx, "issued-token", alice)
-			Expect(err).To(MatchError(ErrNoCredential))
-
-			_, err = store.client.CoreV1().Secrets(testNamespace).Get(ctx, secretName(alice), metav1.GetOptions{})
-			Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expired credential secret should be deleted")
-		})
-	})
-
-	Describe("Reissue", func() {
-		// The point of the whole re-key: a browser that lost its token gets a
-		// working one back without the user retyping their PAT.
-		It("returns a working session carrying the SCM account", func() {
-			_, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
-
-			sess, err := store.Reissue(ctx, alice)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sess.Owner).To(Equal("alice-gh"))
-			Expect(sess.AvatarURL).To(Equal("https://avatars/alice"))
-
-			credential, err := store.GetCredential(ctx, sess.Token, alice)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(credential.Secret).To(Equal("ghp_secret"))
-		})
-
-		// Two tabs refreshing must converge on one handle. If each got its own,
-		// every refresh would invalidate the other tab's token and they would
-		// refresh each other in a loop.
-		It("keeps an unexpired token stable across calls", func() {
-			token, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
-
-			first, err := store.Reissue(ctx, alice)
-			Expect(err).NotTo(HaveOccurred())
-			second, err := store.Reissue(ctx, alice)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(first.Token).To(Equal(token))
-			Expect(second.Token).To(Equal(token))
-		})
-
-		It("mints a fresh token once the old one expired", func() {
-			store = newTestStore(secretFor(alice, func(d *secretData) {
-				d.SessionExpiresAt = time.Now().Add(-time.Minute)
-			}))
-
-			sess, err := store.Reissue(ctx, alice)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sess.Token).NotTo(Equal("issued-token"), "an expired token should be replaced, not handed back")
-
-			_, err = store.GetCredential(ctx, sess.Token, alice)
-			Expect(err).NotTo(HaveOccurred(), "the new token should work")
-
-			_, err = store.GetCredential(ctx, "issued-token", alice)
-			Expect(err).To(MatchError(ErrInvalidSession), "the expired token should stop working once replaced")
-		})
-
-		It("reports ErrNoCredential for a user with nothing stored", func() {
-			_, err := store.Reissue(ctx, alice)
-			Expect(err).To(MatchError(ErrNoCredential))
-		})
-
-		It("refuses an expired credential", func() {
-			store = newTestStore(secretFor(alice, func(d *secretData) {
-				d.ExpiresAt = time.Now().Add(-time.Minute)
-			}))
-
-			_, err := store.Reissue(ctx, alice)
+			_, err := store.GetCredential(ctx, mallory)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 
@@ -242,26 +129,65 @@ var _ = Describe("Store", func() {
 			store = newTestStore(secretFor(alice))
 
 			// mallory hashes to a different Secret name, so this is the ordinary miss.
-			_, err := store.Reissue(ctx, mallory)
+			_, err := store.GetCredential(ctx, mallory)
+			Expect(err).To(MatchError(ErrNoCredential))
+
+			// The rightful owner keeps the credential: a failed read by somebody
+			// else must not cost them their connection.
+			_, err = store.GetCredential(ctx, alice)
+			Expect(err).NotTo(HaveOccurred(), "owner should still reach their credential")
+		})
+
+		It("rejects and deletes an expired credential", func() {
+			store = newTestStore(secretFor(alice, func(d *secretData) {
+				d.ExpiresAt = time.Now().Add(-time.Minute)
+			}))
+
+			_, err := store.GetCredential(ctx, alice)
+			Expect(err).To(MatchError(ErrNoCredential))
+
+			_, err = store.client.CoreV1().Secrets(testNamespace).Get(ctx, secretName(alice), metav1.GetOptions{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expired credential secret should be deleted")
+		})
+
+		// Secrets written before the session token was removed key their payload
+		// under "session". Reporting them as nothing stored is what lets the user
+		// reconnect and overwrite them, instead of wedging on a read error.
+		It("reports ErrNoCredential for a secret left by the old session format", func() {
+			stale := secretFor(alice)
+			stale.Data = map[string][]byte{"session": stale.Data[secretDataKey]}
+			store = newTestStore(stale)
+
+			_, err := store.GetCredential(ctx, alice)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 	})
 
-	Describe("DeleteSession", func() {
+	Describe("Delete", func() {
 		It("removes the secret", func() {
-			token, err := store.CreateSession(ctx, alice, alicePAT)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(store.SaveCredential(ctx, alice, alicePAT)).To(Succeed())
 
-			Expect(store.DeleteSession(ctx, alice)).To(Succeed())
+			Expect(store.DeleteCredential(ctx, alice)).To(Succeed())
 
-			_, err = store.GetCredential(ctx, token, alice)
+			_, err := store.GetCredential(ctx, alice)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 
 		// Disconnecting is something the browser does on its way out; failing it
 		// because there was nothing to delete would only produce noise.
 		It("succeeds when there is nothing to delete", func() {
-			Expect(store.DeleteSession(ctx, alice)).To(Succeed())
+			Expect(store.DeleteCredential(ctx, alice)).To(Succeed())
+		})
+
+		// Revocation follows the identity, so one user disconnecting must not
+		// take another user's credential with it.
+		It("leaves another user's credential alone", func() {
+			store = newTestStore(secretFor(alice))
+
+			Expect(store.DeleteCredential(ctx, mallory)).To(Succeed())
+
+			_, err := store.GetCredential(ctx, alice)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
@@ -270,19 +196,6 @@ var _ = Describe("NewStore", func() {
 	It("rejects an empty namespace", func() {
 		_, err := NewStore(nil, "")
 		Expect(err).To(HaveOccurred())
-	})
-})
-
-var _ = Describe("generateToken", func() {
-	It("is unique and full length", func() {
-		token1, err := generateToken()
-		Expect(err).NotTo(HaveOccurred())
-		token2, err := generateToken()
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(token1).NotTo(Equal(token2))
-		// Hex doubles the byte count, and a short token is a guessable token.
-		Expect(token1).To(HaveLen(tokenLength * 2))
 	})
 })
 
@@ -318,27 +231,29 @@ func readSecretData(store *Store, user identity.User) secretData {
 	GinkgoHelper()
 
 	secret, err := store.client.CoreV1().Secrets(testNamespace).Get(context.Background(), secretName(user), metav1.GetOptions{})
-	Expect(err).NotTo(HaveOccurred(), "session secret not found")
+	Expect(err).NotTo(HaveOccurred(), "credential secret not found")
 
 	var data secretData
-	Expect(json.Unmarshal(secret.Data["session"], &data)).To(Succeed())
+	Expect(json.Unmarshal(secret.Data[secretDataKey], &data)).To(Succeed())
 	return data
 }
 
-// secretFor builds a stored credential for user, holding the session token
-// "issued-token". Each mutator adjusts it, so a test states only the field it
-// is about.
+// secretFor builds a stored credential owned by user. Each mutator adjusts it,
+// so a test states only the field it is about.
 func secretFor(user identity.User, mutators ...func(*secretData)) *corev1.Secret {
-	now := time.Now()
+	return secretAt(user, user, mutators...)
+}
+
+// secretAt builds a credential stored under name's Secret but bound to boundTo,
+// which is how a test separates "where the Secret was found" from "whose it is".
+func secretAt(name, boundTo identity.User, mutators ...func(*secretData)) *corev1.Secret {
 	d := secretData{
-		Credential:       "ghp_secret",
-		Type:             CredentialTypePAT,
-		Owner:            "alice-gh",
-		AvatarURL:        "https://avatars/alice",
-		User:             user,
-		SessionToken:     "issued-token",
-		SessionExpiresAt: now.Add(sessionTTL),
-		ExpiresAt:        now.Add(credentialTTL),
+		Credential: "ghp_secret",
+		Type:       CredentialTypePAT,
+		Owner:      "alice-gh",
+		AvatarURL:  "https://avatars/alice",
+		User:       boundTo,
+		ExpiresAt:  time.Now().Add(credentialTTL),
 	}
 	for _, mutate := range mutators {
 		mutate(&d)
@@ -349,7 +264,7 @@ func secretFor(user identity.User, mutators ...func(*secretData)) *corev1.Secret
 		panic(err)
 	}
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: secretName(user), Namespace: testNamespace},
-		Data:       map[string][]byte{"session": data},
+		ObjectMeta: metav1.ObjectMeta{Name: secretName(name), Namespace: testNamespace},
+		Data:       map[string][]byte{secretDataKey: data},
 	}
 }

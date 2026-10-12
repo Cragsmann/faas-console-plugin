@@ -21,68 +21,49 @@ import (
 const (
 	// testOCPToken stands in for the console user token the proxy forwards.
 	testOCPToken = "ocp-token"
-	// testNamespace is where the fake cluster keeps its session Secrets.
+	// testNamespace is where the fake cluster keeps its credential Secrets.
 	testNamespace = "console-functions-plugin"
 )
 
-// testOCPUser is the OpenShift user every test session is bound to.
+// testOCPUser is the OpenShift user every stored credential is bound to.
 var testOCPUser = identity.User{Username: "tester", UID: "tester-uid"}
 
-// The handler tests run against a real auth.Store over a fake cluster rather
-// than a stand-in, so the ownership and expiry rules under test are the ones
-// that ship. The token has to be fixed because authenticate builds requests
-// before testHandlers exists, and a real store hands out a random one, so it is
-// minted once here and the resulting Secret is replayed into each test's cluster.
-var (
-	testSessionToken  string
-	testSessionSecret *corev1.Secret
-)
+// credentialCluster is the fake cluster behind the store testHandlers built
+// last. A package var is enough because a spec always builds its handlers
+// before it asserts on them, and specs never run concurrently within a process.
+var credentialCluster *fake.Clientset
 
-func init() {
-	client := fake.NewClientset()
-	store := auth.NewStoreWithClient(client, testNamespace)
-
-	token, err := store.CreateSession(context.Background(), testOCPUser, auth.Credential{
-		Owner:  "tester",
-		Secret: "test-pat",
-		Type:   auth.CredentialTypePAT,
-	})
-	if err != nil {
-		panic(fmt.Sprintf("seed test session: %v", err))
-	}
-	secrets, err := client.CoreV1().Secrets(testNamespace).List(context.Background(), metav1.ListOptions{})
-	if err != nil || len(secrets.Items) != 1 {
-		panic(fmt.Sprintf("seed test session: got %d secrets, err %v", len(secrets.Items), err))
-	}
-
-	testSessionToken = token
-	testSessionSecret = &secrets.Items[0]
-}
-
-// sessionCluster is the fake cluster behind the store testHandlers built last.
-// A package var is enough because a spec always builds its handlers before it
-// asserts on them, and specs never run concurrently within a process.
-var sessionCluster *fake.Clientset
-
-// sessionSecrets returns the session Secrets the handler under test can see,
-// for asserting what it stored or revoked.
-func sessionSecrets() []corev1.Secret {
-	list, err := sessionCluster.CoreV1().Secrets(testNamespace).List(context.Background(), metav1.ListOptions{})
+// credentialSecrets returns the Secrets the handler under test can see, for
+// asserting what it stored or revoked.
+func credentialSecrets() []corev1.Secret {
+	list, err := credentialCluster.CoreV1().Secrets(testNamespace).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		panic(err)
 	}
 	return list.Items
 }
 
-// testHandlers gives h a session store and an identity resolver so credential
-// lookup takes the same path as production. Pass the struct by value: callers
-// set only the fields they care about and never have to remember the rest. A
-// resolver set by the caller is kept, which is how a test plays a different user.
+// testHandlers gives h a credential store holding testOCPUser's PAT, plus an
+// identity resolver, so credential lookup takes the same path as production.
+// The tests run against a real auth.Store over a fake cluster rather than a
+// stand-in, so the ownership and expiry rules they exercise are the ones that
+// ship. Pass the struct by value: callers set only the fields they care about
+// and never have to remember the rest. A resolver set by the caller is kept,
+// which is how a test plays a different user.
 func testHandlers(h Handlers) *Handlers {
-	// A cluster of its own per call, so one spec revoking a session cannot
+	// A cluster of its own per call, so one spec revoking a credential cannot
 	// change what the next one sees.
-	sessionCluster = fake.NewClientset(testSessionSecret.DeepCopy())
-	h.sessionStore = auth.NewStoreWithClient(sessionCluster, testNamespace)
+	credentialCluster = fake.NewClientset()
+	store := auth.NewStoreWithClient(credentialCluster, testNamespace)
+	err := store.SaveCredential(context.Background(), testOCPUser, auth.Credential{
+		Owner:  "tester",
+		Secret: "test-pat",
+		Type:   auth.CredentialTypePAT,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("seed test credential: %v", err))
+	}
+	h.credentials = store
 
 	if h.identityResolver == nil {
 		h.identityResolver = &identity.ResolverStub{
@@ -92,10 +73,10 @@ func testHandlers(h Handlers) *Handlers {
 	return &h
 }
 
-// authenticate marks req as coming from a live session. Both headers are needed:
-// the console proxy always forwards the user token, and the session is bound to it.
+// authenticate marks req as coming through the console proxy, which forwards
+// the user token. That identity is now the only thing a request carries: the
+// credential is found by it rather than by a handle the browser holds.
 func authenticate(req *http.Request) *http.Request {
-	req.Header.Set(sessionHeader, testSessionToken)
 	req.Header.Set("Authorization", "Bearer "+testOCPToken)
 	return req
 }

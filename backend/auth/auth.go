@@ -1,14 +1,13 @@
 // Package auth keeps SCM credentials in Kubernetes Secrets instead of the
-// browser. A caller trades a session token plus its OpenShift identity for the
-// credential; the credential itself never leaves the backend. Who the caller is
-// comes from the auth/identity subpackage.
+// browser. A caller's OpenShift identity is the only key: it names the Secret
+// and is verified against the binding inside it, and the credential itself
+// never leaves the backend. Who the caller is comes from the auth/identity
+// subpackage.
 package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,16 +25,13 @@ import (
 
 const (
 	credentialTTL       = 7 * 24 * time.Hour
-	sessionTTL          = 24 * time.Hour
-	tokenLength         = 16
 	secretNamePrefix    = "scm-cred-"
+	secretDataKey       = "credential"
 	CredentialTypePAT   = "pat"
 	CredentialTypeOAuth = "oauth"
 )
 
 var ErrNoCredential = errors.New("no stored credential for user")
-
-var ErrInvalidSession = errors.New("invalid or expired session token")
 
 type Credential struct {
 	Owner     string // SCM username
@@ -44,31 +40,23 @@ type Credential struct {
 	Type      string // CredentialTypePAT or CredentialTypeOAuth
 }
 
-type Session struct {
-	Token     string
-	Owner     string
-	AvatarURL string
-}
-
 type Store struct {
 	client    kubernetes.Interface
 	namespace string
 }
 
 type secretData struct {
-	Credential       string        `json:"credential"`
-	Type             string        `json:"type"`  // CredentialTypePAT or CredentialTypeOAuth
-	Owner            string        `json:"owner"` // GitHub username or other identifier
-	AvatarURL        string        `json:"avatarUrl,omitempty"`
-	User             identity.User `json:"user"`
-	SessionToken     string        `json:"sessionToken"`
-	SessionExpiresAt time.Time     `json:"sessionExpiresAt"`
-	ExpiresAt        time.Time     `json:"expiresAt"`
+	Credential string        `json:"credential"`
+	Type       string        `json:"type"`  // CredentialTypePAT or CredentialTypeOAuth
+	Owner      string        `json:"owner"` // GitHub username or other identifier
+	AvatarURL  string        `json:"avatarUrl,omitempty"`
+	User       identity.User `json:"user"`
+	ExpiresAt  time.Time     `json:"expiresAt"`
 }
 
 func NewStore(cfg *rest.Config, namespace string) (*Store, error) {
 	if namespace == "" {
-		return nil, fmt.Errorf("session namespace is required")
+		return nil, fmt.Errorf("credential namespace is required")
 	}
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
@@ -81,44 +69,25 @@ func NewStoreWithClient(client kubernetes.Interface, namespace string) *Store {
 	return &Store{client: client, namespace: namespace}
 }
 
-func (s *Store) CreateSession(ctx context.Context, user identity.User, cred Credential) (string, error) {
+func (s *Store) SaveCredential(ctx context.Context, user identity.User, cred Credential) error {
 	if user.Username == "" {
-		return "", fmt.Errorf("session requires an OpenShift user")
+		return fmt.Errorf("storing a credential requires an OpenShift user")
 	}
 
-	token, err := generateToken()
-	if err != nil {
-		return "", err
-	}
-
-	now := time.Now()
-	err = s.writeCredential(ctx, user, secretData{
-		Credential:       cred.Secret,
-		Type:             cred.Type,
-		Owner:            cred.Owner,
-		AvatarURL:        cred.AvatarURL,
-		User:             user,
-		SessionToken:     token,
-		SessionExpiresAt: now.Add(sessionTTL),
-		ExpiresAt:        now.Add(credentialTTL),
+	return s.write(ctx, user, secretData{
+		Credential: cred.Secret,
+		Type:       cred.Type,
+		Owner:      cred.Owner,
+		AvatarURL:  cred.AvatarURL,
+		User:       user,
+		ExpiresAt:  time.Now().Add(credentialTTL),
 	})
-	if err != nil {
-		return "", err
-	}
-
-	return token, nil
 }
 
-func (s *Store) GetCredential(ctx context.Context, token string, user identity.User) (Credential, error) {
-	data, err := s.readCredential(ctx, user)
+func (s *Store) GetCredential(ctx context.Context, user identity.User) (Credential, error) {
+	data, err := s.read(ctx, user)
 	if err != nil {
 		return Credential{}, err
-	}
-	if subtle.ConstantTimeCompare([]byte(data.SessionToken), []byte(token)) != 1 {
-		return Credential{}, fmt.Errorf("%w: token does not match the one issued", ErrInvalidSession)
-	}
-	if time.Now().After(data.SessionExpiresAt) {
-		return Credential{}, fmt.Errorf("%w: past sessionExpiresAt", ErrInvalidSession)
 	}
 	if err := s.dropIfExpired(ctx, user, data); err != nil {
 		return Credential{}, err
@@ -132,39 +101,15 @@ func (s *Store) GetCredential(ctx context.Context, token string, user identity.U
 	}, nil
 }
 
-func (s *Store) Reissue(ctx context.Context, user identity.User) (Session, error) {
-	data, err := s.readCredential(ctx, user)
-	if err != nil {
-		return Session{}, err
-	}
-	if err := s.dropIfExpired(ctx, user, data); err != nil {
-		return Session{}, err
-	}
-
-	if time.Now().After(data.SessionExpiresAt) {
-		token, err := generateToken()
-		if err != nil {
-			return Session{}, err
-		}
-		data.SessionToken = token
-		data.SessionExpiresAt = time.Now().Add(sessionTTL)
-		if err := s.writeCredential(ctx, user, data); err != nil {
-			return Session{}, err
-		}
-	}
-
-	return Session{Token: data.SessionToken, Owner: data.Owner, AvatarURL: data.AvatarURL}, nil
-}
-
-func (s *Store) DeleteSession(ctx context.Context, user identity.User) error {
+func (s *Store) DeleteCredential(ctx context.Context, user identity.User) error {
 	err := s.client.CoreV1().Secrets(s.namespace).Delete(ctx, secretName(user), metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("delete session secret: %w", err)
+		return fmt.Errorf("delete credential secret: %w", err)
 	}
 	return nil
 }
 
-func (s *Store) readCredential(ctx context.Context, user identity.User) (secretData, error) {
+func (s *Store) read(ctx context.Context, user identity.User) (secretData, error) {
 	secret, err := s.client.CoreV1().Secrets(s.namespace).Get(ctx, secretName(user), metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -173,14 +118,15 @@ func (s *Store) readCredential(ctx context.Context, user identity.User) (secretD
 		return secretData{}, fmt.Errorf("get secret: %w", err)
 	}
 
-	dataBytes, ok := secret.Data["session"]
+	dataBytes, ok := secret.Data[secretDataKey]
 	if !ok {
-		return secretData{}, fmt.Errorf("session data not found in secret")
+		slog.Warn("credential secret has no usable payload", "secret", secret.Name)
+		return secretData{}, ErrNoCredential
 	}
 
 	var data secretData
 	if err := json.Unmarshal(dataBytes, &data); err != nil {
-		return secretData{}, fmt.Errorf("unmarshal session data: %w", err)
+		return secretData{}, fmt.Errorf("unmarshal credential data: %w", err)
 	}
 
 	if !data.User.Matches(user) {
@@ -196,13 +142,13 @@ func (s *Store) dropIfExpired(ctx context.Context, user identity.User, data secr
 	if !time.Now().After(data.ExpiresAt) {
 		return nil
 	}
-	if err := s.DeleteSession(ctx, user); err != nil {
+	if err := s.DeleteCredential(ctx, user); err != nil {
 		slog.Error("failed to delete expired credential", "err", err)
 	}
 	return ErrNoCredential
 }
 
-func (s *Store) writeCredential(ctx context.Context, user identity.User, data secretData) error {
+func (s *Store) write(ctx context.Context, user identity.User, data secretData) error {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal secret data: %w", err)
@@ -214,11 +160,11 @@ func (s *Store) writeCredential(ctx context.Context, user identity.User, data se
 			Namespace: s.namespace,
 			Labels: map[string]string{
 				"app":  "console-functions-plugin",
-				"type": "session",
+				"type": "scm-credential",
 			},
 		},
 		Data: map[string][]byte{
-			"session": dataBytes,
+			secretDataKey: dataBytes,
 		},
 	}
 
@@ -232,14 +178,6 @@ func (s *Store) writeCredential(ctx context.Context, user identity.User, data se
 		}
 	}
 	return nil
-}
-
-func generateToken() (string, error) {
-	b := make([]byte, tokenLength)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate token: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }
 
 func secretName(user identity.User) string {
