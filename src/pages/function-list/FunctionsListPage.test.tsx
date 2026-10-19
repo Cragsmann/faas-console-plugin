@@ -32,8 +32,6 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
       {children}
     </>
   ),
-  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
-  consoleFetch: sdkTestDoubles.consoleFetchStub,
   SuccessStatus: ({ title }: { title: string }) => <span>Success: {title}</span>,
   ErrorStatus: ({ title }: { title: string }) => <span>Error: {title}</span>,
   InfoStatus: ({ title }: { title: string }) => <span>Info: {title}</span>,
@@ -42,6 +40,11 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
   useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
   useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
   isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
+}));
+
+vi.mock('../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
 describe('FunctionsListPage', () => {

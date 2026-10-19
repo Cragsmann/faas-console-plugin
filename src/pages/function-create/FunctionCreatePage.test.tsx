@@ -23,9 +23,12 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
       {children}
     </>
   ),
-  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
-  consoleFetch: sdkTestDoubles.consoleFetchStub,
   useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
+}));
+
+vi.mock('../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
 vi.mock('react-router', async (importOriginal) => ({

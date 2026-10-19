@@ -1,6 +1,6 @@
 import { isAllNamespacesKey } from '@openshift-console/dynamic-plugin-sdk';
 import { AppError, HttpError } from '../errors';
-import { customFetch, customFetchJSON } from './authClient';
+import { customFetch, customFetchJSON } from './httpClient';
 import { createSSEEventSource } from '../transport/sseEventSource';
 import {
   CreateFunctionRequest,

@@ -24,19 +24,6 @@ vi.mock('react-i18next', () => ({
 let mockOnChange: ((value: string) => void) | undefined;
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
-  const consoleFetchJSON = async (url: string, _method?: string, options?: RequestInit) => {
-    const res = await fetch(new URL(url, 'http://localhost').href, options);
-    const json = await res.json();
-    if (!res.ok) throw json;
-    return json;
-  };
-
-  const consoleFetch = async (url: string, options?: RequestInit) => {
-    const res = await fetch(new URL(url, 'http://localhost').href, options);
-    if (!res.ok) throw await res.json();
-    return res;
-  };
-
   return {
     DocumentTitle: ({ children }: { children: string }) => children,
     ListPageHeader: ({ title }: { title: string }) => title,
@@ -61,12 +48,15 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
         </div>
       );
     },
-    consoleFetchJSON,
-    consoleFetch,
     useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
     isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
   };
 });
+
+vi.mock('../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
+}));
 
 function renderEditPage(name: string) {
   return render(

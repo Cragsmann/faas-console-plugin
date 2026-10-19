@@ -25,9 +25,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
-  consoleFetch: sdkTestDoubles.consoleFetchStub,
-  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
+vi.mock('../../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
 const emptySecrets: K8sKeyedResource[] = [];
