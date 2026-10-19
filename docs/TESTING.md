@@ -59,7 +59,7 @@ Shared test infrastructure lives in `src/common/testing/`:
 
 | File | Purpose |
 | ------ | --------- |
-| `sdkTestDoubles.tsx` | Stubs for the OCP SDK: `consoleFetchStub` and `consoleFetchJSONStub` (bridge the SDK fetch wrappers to real `fetch` so MSW can intercept), `useK8sWatchResourceStub`, `useActiveNamespaceStub`, fixture builders (`ksvcFixture`, `deploymentFixture`) |
+| `sdkTestDoubles.tsx` | Stubs for the OCP SDK and `httpClient`: `customFetchStub` and `customFetchJSONStub` (bridge `httpClient` to real `fetch` so MSW can intercept), `useK8sWatchResourceStub`, `useActiveNamespaceStub`, fixture builders (`ksvcFixture`, `deploymentFixture`) |
 | `functionsClientStub.ts` | MSW handlers for the backend API (`listFunctionsStub`, `getFilesStub`, `putFilesStub`, `receiveWorkflowRunEventsStub`), with configurable responses, errors, and delays |
 | `authClientStub.ts` | MSW handlers for the auth endpoints (`connectStub`, `connectionStub`, `noConnectionStub`, `disconnectStub`) |
 | `testData.ts` | Test data factories for shared test fixtures (`functionMetadata`) |
@@ -72,13 +72,13 @@ Shared test infrastructure lives in `src/common/testing/`:
 
 Tests replace external dependencies at two boundaries using test doubles:
 
-**Backend API (MSW).** `functionsClient.ts` and `authClient.ts` call the Go backend over HTTP. MSW intercepts these requests at the network level, so tests exercise the real client code (URL construction, headers, error handling) without replacing it. Test doubles are set up per test via helpers in `src/common/testing/functionsClientStub.ts` and `src/common/testing/authClientStub.ts`.
+**Backend API (MSW).** `functionsClient.ts` and `authClient.ts` call the Go backend over HTTP via `httpClient.ts`. MSW intercepts these requests at the network level, so tests exercise the real client code (URL construction, headers, error handling) without replacing it. Test doubles are set up per test via helpers in `src/common/testing/functionsClientStub.ts` and `src/common/testing/authClientStub.ts`.
 
 Nothing about the connection lives in the browser, so a test puts a component in the connected state by stubbing the GET rather than by seeding storage. That also makes connection asynchronous: `AuthProvider` renders a spinner instead of its children until the backend answers, so assertions on anything inside it need `findBy*`.
 
-The clients reach the network through the SDK's `consoleFetch`/`consoleFetchJSON`, so MSW only sees the request if those are replaced with `consoleFetchStub`/`consoleFetchJSONStub`. Stubbing their return values with `vi.fn()` instead skips the client and tests the double.
+All HTTP clients go through `httpClient.ts`, which is the mock boundary for tests. `vi.mock` replaces `httpClient` with `customFetchStub`/`customFetchJSONStub` from `sdkTestDoubles.tsx`, which bridge to real `fetch` so MSW can intercept. Tests that only need HTTP mock `httpClient` and do not need to mock the SDK at all.
 
-**OCP SDK (test doubles via `vi.mock`).** The OCP dynamic plugin SDK provides hooks like `useK8sWatchResource` and `useActiveNamespace` that only work inside the console shell. Tests replace them with self-written stubs from `src/common/testing/sdkTestDoubles.tsx`, injected through `vi.mock('@openshift-console/dynamic-plugin-sdk')`. The stubs accept raw K8s resource fixtures (Knative Services, Deployments) and let the real hooks derive cluster status, replicas, and URL. This catches shape mismatches at test time instead of hiding them behind pre-computed return values.
+**OCP SDK (test doubles via `vi.mock`).** The OCP dynamic plugin SDK provides hooks like `useK8sWatchResource` and `useActiveNamespace`, plus UI components like `DocumentTitle` and `ListPageHeader`, that only work inside the console shell. Tests replace them with self-written stubs from `src/common/testing/sdkTestDoubles.tsx`, injected through `vi.mock('@openshift-console/dynamic-plugin-sdk')`. The SDK mock contains only hooks and UI component stubs, not fetch functions (those are mocked at the `httpClient` level). The stubs accept raw K8s resource fixtures (Knative Services, Deployments) and let the real hooks derive status, replicas, and URL. This catches shape mismatches at test time instead of hiding them behind pre-computed return values.
 
 `vi.mock` is also used for framework internals that have no external service and cannot run outside their host environment:
 
@@ -163,10 +163,16 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-// OCP SDK boundary — load test doubles via vi.hoisted so they are
+// httpClient boundary — load test doubles via vi.hoisted so they are
 // available inside the vi.mock factory (which is hoisted above imports)
 const sdkTestDoubles = await vi.hoisted(async () => import('../../common/testing/sdkTestDoubles'));
 
+vi.mock('../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
+}));
+
+// OCP SDK boundary — only hooks and UI components, not fetch functions
 vi.mock('@openshift-console/dynamic-plugin-sdk', async () => ({
   useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
   useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,

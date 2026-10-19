@@ -62,9 +62,10 @@ Arrows mean "imports / depends on."
 
 ### Clients
 
-`common/clients/` contains thin wrappers around external APIs:
+`common/clients/` contains thin wrappers around external APIs. Two forms:
 
-- **Plain async functions** (e.g., `functionsClient.ts`) -- stateless fetch wrappers and SSE stream consumers that page hooks call.
+- **`httpClient.ts`** -- the single fetch boundary. Wraps the SDK's `consoleFetch`/`consoleFetchJSON` with 401 -> `AUTH_EXPIRED_EVENT` dispatch and header flattening. All HTTP clients import `customFetch`/`customFetchJSON` from here, never from the SDK directly.
+- **Plain async functions** (e.g., `functionsClient.ts`, `authClient.ts`) -- stateless fetch wrappers and SSE stream consumers that hooks call, built on `httpClient`.
 
 ### Hooks
 
