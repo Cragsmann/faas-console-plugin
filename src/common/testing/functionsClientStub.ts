@@ -102,33 +102,29 @@ export function putFilesStub({
   );
 }
 
-export function createFunctionStub(
-  {
-    response,
-    errorResponse,
-  }: {
-    response?: Partial<CreateFunctionRequest>;
-    errorResponse?: { message: string; status: number };
-  } = { response: undefined },
-) {
-  const keys = response ? (Object.keys(response) as (keyof CreateFunctionRequest)[]) : [];
+export function createFunctionStub({
+  errorResponse,
+  wait,
+}: {
+  errorResponse?: { message: string; status: number };
+  wait?: Promise<void>;
+} = {}): CreateFunctionRequest[] {
+  const requests: CreateFunctionRequest[] = [];
 
   server.use(
     http.post(`${BACKEND_API}/api/v1/func/create`, async ({ request }) => {
-      if (errorResponse)
+      if (errorResponse?.message && errorResponse?.status)
         return HttpResponse.json(
-          { message: errorResponse.message },
+          { message: errorResponse?.message },
           { status: errorResponse.status },
         );
 
-      const body = (await request.json()) as CreateFunctionRequest;
-      const matches = keys.every(
-        (key) => JSON.stringify(body[key]) === JSON.stringify(response![key]),
-      );
-      if (!matches) {
-        return HttpResponse.json({ message: 'Unexpected payload' }, { status: 422 });
-      }
+      if (wait) await wait;
+
+      requests.push((await request.json()) as CreateFunctionRequest);
       return new HttpResponse(null, { status: 201 });
     }),
   );
+
+  return requests;
 }
