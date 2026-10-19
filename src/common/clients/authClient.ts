@@ -10,7 +10,7 @@ interface AccountResponse {
   avatarUrl: string;
 }
 
-export async function connect(pat: string): Promise<AuthUser> {
+export async function connectGithubUser(pat: string): Promise<AuthUser> {
   const account = await customFetchJSON<AccountResponse>(GITHUB_TOKEN_URL, 'POST', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pat }),
@@ -20,7 +20,7 @@ export async function connect(pat: string): Promise<AuthUser> {
 
 // Resolves null only when the backend says it holds nothing, which is the
 // signal to ask for a PAT.
-export async function fetchConnection(): Promise<AuthUser | null> {
+export async function fetchGithubUser(): Promise<AuthUser | null> {
   try {
     const account = await customFetchJSON<AccountResponse>(GITHUB_TOKEN_URL);
     return toUser(account);
@@ -30,7 +30,7 @@ export async function fetchConnection(): Promise<AuthUser | null> {
   }
 }
 
-export async function disconnect(): Promise<void> {
+export async function disconnectGithubUser(): Promise<void> {
   try {
     await customFetch(GITHUB_TOKEN_URL, { method: 'DELETE' });
   } catch {

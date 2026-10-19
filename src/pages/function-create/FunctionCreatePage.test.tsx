@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router';
 import FunctionCreatePage from './FunctionCreatePage';
 import { BACKEND_API } from '../../common/testing/constants';
-import { connectionStub, noConnectionStub } from '../../common/testing/authClientStub';
+import { fetchGithubUserStub, noGithubUserStub } from '../../common/testing/authClientStub';
 import { server } from '../../common/testing/mswServer';
 
 const sdkTestDoubles = await vi.hoisted(async () => import('../../common/testing/sdkTestDoubles'));
@@ -67,7 +67,7 @@ const fillForm = async (user: ReturnType<typeof userEvent.setup>) => {
 
 describe('FunctionCreatePage', () => {
   beforeEach(() => {
-    connectionStub();
+    fetchGithubUserStub();
   });
 
   afterEach(() => {
@@ -115,20 +115,19 @@ describe('FunctionCreatePage', () => {
   });
 
   it('renders UserAvatar in header', async () => {
-    noConnectionStub();
+    noGithubUserStub();
     renderPage();
 
     expect(await screen.findByTestId('user-avatar')).toBeInTheDocument();
   });
 
-  it('shows warning and hides form when the backend holds no credential', async () => {
-    noConnectionStub();
+  it('hides form when the backend holds no credential', async () => {
+    noGithubUserStub();
     renderPage();
 
-    expect(
-      await screen.findByText(/A GitHub Personal Access Token is required to create functions/),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: /Owner/ })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('textbox', { name: /Owner/ })).not.toBeInTheDocument(),
+    );
   });
 
   it('sends environment variables to backend during submission', async () => {

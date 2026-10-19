@@ -2,9 +2,9 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import {
-  connectionStub,
-  noConnectionStub,
-  disconnectStub,
+  fetchGithubUserStub,
+  noGithubUserStub,
+  disconnectGithubUserStub,
 } from '../../common/testing/authClientStub';
 import { listFunctionsStub } from '../../common/testing/functionsClientStub';
 import { repoListItem } from '../../common/testing/testData';
@@ -51,7 +51,7 @@ describe('FunctionsListPage', () => {
   const funcName = 'my-func';
 
   beforeEach(() => {
-    connectionStub();
+    fetchGithubUserStub();
   });
 
   afterEach(() => {
@@ -74,7 +74,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('prompts for a PAT when the backend holds nothing', async () => {
-    noConnectionStub();
+    noGithubUserStub();
     listFunctionsStub();
 
     render(
@@ -177,7 +177,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('does not call backend API when not authenticated', async () => {
-    noConnectionStub();
+    noGithubUserStub();
     render(
       <MemoryRouter>
         <FunctionsListPage />
@@ -192,7 +192,7 @@ describe('FunctionsListPage', () => {
   it('clears the listed functions when the user disconnects', async () => {
     listFunctionsStub({ responses: [repoListItem({ repoName: funcName, name: funcName })] });
     sdkTestDoubles.setWatchFixtures(sdkTestDoubles.funcFixture(funcName));
-    disconnectStub();
+    disconnectGithubUserStub();
 
     render(
       <MemoryRouter>
@@ -276,7 +276,7 @@ describe('FunctionsListPage', () => {
   });
 
   it('empty state receives hint and isCreateDisabled when not authenticated', async () => {
-    noConnectionStub();
+    noGithubUserStub();
     render(
       <MemoryRouter>
         <FunctionsListPage />

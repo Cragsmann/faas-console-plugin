@@ -10,7 +10,7 @@ type Account = { login: string; avatarUrl: string };
 type ErrorResponse = { message: string; status: number };
 
 // connectStub answers the POST that hands the backend a PAT.
-export function connectStub({
+export function connectGithubUserStub({
   response = CONNECTED_ACCOUNT,
   errorResponse,
 }: { response?: Account; errorResponse?: ErrorResponse } = {}) {
@@ -19,7 +19,7 @@ export function connectStub({
 
 // connectionStub answers the GET the UI makes on mount. Omit the response to
 // play a user who has never connected, which is the 404 the backend sends.
-export function connectionStub({
+export function fetchGithubUserStub({
   response = CONNECTED_ACCOUNT,
   errorResponse,
 }: { response?: Account | null; errorResponse?: ErrorResponse } = {}) {
@@ -35,11 +35,13 @@ export function connectionStub({
 
 // noConnectionStub plays a user with nothing stored, so the UI should prompt
 // for a PAT rather than connect them.
-export function noConnectionStub() {
-  connectionStub({ response: null });
+export function noGithubUserStub() {
+  fetchGithubUserStub({ response: null });
 }
 
-export function disconnectStub({ errorResponse }: { errorResponse?: ErrorResponse } = {}) {
+export function disconnectGithubUserStub({
+  errorResponse,
+}: { errorResponse?: ErrorResponse } = {}) {
   server.use(
     http.delete(TOKEN_URL, () => {
       if (errorResponse) {

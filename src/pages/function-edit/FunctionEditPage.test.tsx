@@ -6,7 +6,7 @@ import {
   listFunctionsStub,
   putFilesStub,
 } from '../../common/testing/functionsClientStub';
-import { connectionStub } from '../../common/testing/authClientStub';
+import { fetchGithubUserStub } from '../../common/testing/authClientStub';
 import { repoListItem } from '../../common/testing/testData';
 import { FileEntry } from '../../common/types';
 import FunctionEditPage from './FunctionEditPage';
@@ -70,7 +70,7 @@ function renderEditPage(name: string) {
 
 describe('FunctionEditPage', () => {
   beforeEach(() => {
-    connectionStub();
+    fetchGithubUserStub();
   });
 
   it('shows loading state in tree while fetching files', async () => {
