@@ -14,9 +14,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
-  consoleFetch: sdkTestDoubles.consoleFetchStub,
-  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
+vi.mock('../clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
 const TOKEN_URL = `${BACKEND_API}/api/v1/auth/github-token`;

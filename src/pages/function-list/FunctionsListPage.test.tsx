@@ -36,13 +36,16 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', async () => {
     InfoStatus: ({ title }: { title: string }) => `Info: ${title}`,
     StatusIconAndText: ({ title }: { title: string }) => `Warning: ${title}`,
     useDeleteModal: () => () => {},
-    consoleFetch: sdkTestDoubles.consoleFetchStub,
-    consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
     useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
     useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
     isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
   };
 });
+
+vi.mock('../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
+}));
 
 describe('FunctionsListPage', () => {
   const funcName = 'my-func';

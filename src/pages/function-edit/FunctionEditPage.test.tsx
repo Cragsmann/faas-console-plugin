@@ -47,12 +47,15 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
         </div>
       );
     },
-    consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
-    consoleFetch: sdkTestDoubles.consoleFetchStub,
     useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
     isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
   };
 });
+
+vi.mock('../../common/clients/httpClient', () => ({
+  customFetch: sdkTestDoubles.customFetchStub,
+  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
+}));
 
 function renderEditPage(name: string) {
   return render(

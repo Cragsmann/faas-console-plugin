@@ -1,5 +1,5 @@
 import { isAllNamespacesKey } from '@openshift-console/dynamic-plugin-sdk';
-import { customFetch, customFetchJSON } from './authClient';
+import { customFetch, customFetchJSON } from './httpClient';
 import { CreateFunctionRequest, FileEntry, FunctionListItem, PROXY_BASE } from '../types';
 
 export async function listFunctions(namespace: string): Promise<FunctionListItem[]> {
