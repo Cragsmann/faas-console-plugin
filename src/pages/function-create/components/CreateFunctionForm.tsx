@@ -1,7 +1,6 @@
 import {
   ActionGroup,
   Alert,
-  Bullseye,
   Button,
   Flex,
   FlexItem,
@@ -15,7 +14,6 @@ import {
   GridItem,
   HelperText,
   HelperTextItem,
-  Spinner,
   Split,
   SplitItem,
   Stack,
@@ -69,7 +67,6 @@ interface CreateFunctionFormProps {
   onSubmit: (data: CreateFunctionFormData) => void;
   onCancel: () => void;
   setNamespaceWatchField: (namespace: string) => void;
-  namespacesLoaded: boolean;
 }
 
 export function CreateFunctionForm({
@@ -81,18 +78,25 @@ export function CreateFunctionForm({
   isSubmitting,
   canCreateNamespaces,
   namespaces,
-  namespacesLoaded,
 }: CreateFunctionFormProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
-  const { fields, setField, setNamespaceFormField, setEnvVars, isValid } = useCreateFunctionForm();
 
-  if (!namespacesLoaded) {
-    return (
-      <Bullseye>
-        <Spinner aria-label={t('Loading')} size="lg" />
-      </Bullseye>
-    );
-  }
+  const [activeNamespace] = useActiveNamespace();
+
+  // Resolved once, for the life of the form. The form field is seeded from it
+  // and is the user's from then on, so recomputing it would let the namespace
+  // the page watches drift away from the one the field shows.
+  const [initialNamespace] = useState(() =>
+    resolveInitialNamespace(canCreateNamespaces, namespaces, activeNamespace),
+  );
+
+  const { fields, setField, setNamespaceFormField, setEnvVars, isValid } =
+    useCreateFunctionForm(initialNamespace);
+
+  // A prefill is never typed, so the page has to be told about it once.
+  useEffect(() => {
+    if (initialNamespace) setNamespaceWatchField(initialNamespace);
+  }, [initialNamespace, setNamespaceWatchField]);
 
   return (
     <Form
@@ -136,7 +140,7 @@ export function CreateFunctionForm({
   );
 }
 
-function useCreateFunctionForm() {
+function useCreateFunctionForm(initialNamespace: string) {
   const { user } = useContext(AuthContext);
   const [fields, setFields] = useState<CreateFunctionFormData>({
     owner: user?.name ?? '',
@@ -144,8 +148,8 @@ function useCreateFunctionForm() {
     branch: '',
     name: '',
     runtime: 'node',
-    registry: OCP_INTERNAL_REGISTRY,
-    namespace: '',
+    registry: OCP_INTERNAL_REGISTRY + initialNamespace,
+    namespace: initialNamespace,
     plainEnvVars: [],
     secretEnvVars: [],
     configMapEnvVars: [],
@@ -192,6 +196,22 @@ function useCreateFunctionForm() {
     setEnvVars,
     isValid,
   };
+}
+
+function selectableNamespaces(canCreateNamespaces: boolean, namespaces: string[]): string[] {
+  return canCreateNamespaces ? namespaces : namespaces.filter((ns) => !isSystemNamespace(ns));
+}
+
+function resolveInitialNamespace(
+  canCreateNamespaces: boolean,
+  namespaces: string[],
+  activeNamespace: string,
+): string {
+  const selectable = selectableNamespaces(canCreateNamespaces, namespaces);
+
+  if (activeNamespace && selectable.includes(activeNamespace)) return activeNamespace;
+  if (!canCreateNamespaces && selectable.length === 1) return selectable[0];
+  return '';
 }
 
 interface GithubSettingsSectionProps {
@@ -290,7 +310,7 @@ interface NamespaceInputProps {
   setNamespaceWatchField: (namespace: string) => void; // debounced namespace change handler to watch for secrets and configmaps
 }
 
-export function NamespaceInput({
+function NamespaceInput({
   canCreateNamespaces,
   namespaces,
   value,
@@ -379,8 +399,6 @@ const useNamespaceInput = ({
   setNamespaceFormField,
   setNamespaceWatchField,
 }: UseNamespaceInputProps) => {
-  const [activeNamespace] = useActiveNamespace();
-
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -399,33 +417,14 @@ const useNamespaceInput = ({
     }, 500);
   };
 
-  // A user who cannot create namespaces should never be offered a system namespace, so
-  // filter them out here regardless of what the caller passed in.
   const selectable = useMemo(
-    () => (canCreateNamespaces ? namespaces : namespaces.filter((ns) => !isSystemNamespace(ns))),
+    () => selectableNamespaces(canCreateNamespaces, namespaces),
     [canCreateNamespaces, namespaces],
   );
 
-  // With a single choice there is nothing to pick, so the field is rendered read-only. The
-  // owner still has to learn the value, otherwise the form would submit an empty namespace.
+  // With a single choice there is nothing to pick, so the field is rendered read-only. It
+  // was seeded into the form when it mounted, so there is nothing to keep in sync here.
   const soleNamespace = !canCreateNamespaces && selectable.length === 1 ? selectable[0] : null;
-
-  useEffect(() => {
-    if (activeNamespace && selectable.includes(activeNamespace)) {
-      setNamespaceFormField(activeNamespace);
-      setNamespaceWatchField(activeNamespace);
-    } else if (soleNamespace && value !== soleNamespace) {
-      setNamespaceWatchField(soleNamespace);
-      setNamespaceFormField(soleNamespace);
-    }
-  }, [
-    soleNamespace,
-    value,
-    setNamespaceWatchField,
-    setNamespaceFormField,
-    activeNamespace,
-    selectable,
-  ]);
 
   const namespaceMissing =
     canCreateNamespaces && !!value && namespaces.length > 0 && !namespaces.includes(value);

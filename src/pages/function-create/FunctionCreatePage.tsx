@@ -1,5 +1,5 @@
 import { DocumentTitle, ListPageHeader } from '@openshift-console/dynamic-plugin-sdk';
-import { Alert, PageSection } from '@patternfly/react-core';
+import { Alert, Bullseye, PageSection, Spinner } from '@patternfly/react-core';
 import { useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -57,19 +57,23 @@ function FunctionCreatePageContent() {
             {error}
           </Alert>
         )}
-        {isConnectedToForge && (
-          <CreateFunctionForm
-            secrets={secrets}
-            configMaps={configMaps}
-            onSubmit={handleSubmit}
-            onCancel={handleCancel}
-            setNamespaceWatchField={setNamespaceWatchField}
-            isSubmitting={isSubmitting}
-            canCreateNamespaces={canCreateNamespaces}
-            namespaces={namespaces}
-            namespacesLoaded={namespacesLoaded}
-          />
-        )}
+        {isConnectedToForge &&
+          (!namespacesLoaded ? (
+            <Bullseye>
+              <Spinner aria-label={t('Loading')} size="lg" />
+            </Bullseye>
+          ) : (
+            <CreateFunctionForm
+              secrets={secrets}
+              configMaps={configMaps}
+              onSubmit={handleSubmit}
+              onCancel={handleCancel}
+              setNamespaceWatchField={setNamespaceWatchField}
+              isSubmitting={isSubmitting}
+              canCreateNamespaces={canCreateNamespaces}
+              namespaces={namespaces}
+            />
+          ))}
       </PageSection>
     </>
   );

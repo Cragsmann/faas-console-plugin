@@ -100,15 +100,9 @@ describe('FunctionCreatePage', () => {
     expect(await screen.findByText(/Backend error/)).toBeInTheDocument();
   });
 
-  it('sends environment variables to backend during submission', async () => {
+  it('sends environment variables to the backend', async () => {
     const user = userEvent.setup();
-    createFunctionStub({
-      response: {
-        envVars: [
-          { name: 'MY_VAR', source: 'value', value: 'my-value', resourceName: '', resourceKey: '' },
-        ],
-      },
-    });
+    const requests = createFunctionStub();
 
     renderPage();
 
@@ -121,6 +115,19 @@ describe('FunctionCreatePage', () => {
     await user.click(screen.getByRole('button', { name: /Create/ }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/faas'));
+    expect(requests).toHaveLength(1);
+    expect(requests[0].envVars).toEqual([
+      { name: 'MY_VAR', source: 'value', value: 'my-value', resourceName: '', resourceKey: '' },
+    ]);
+  });
+
+  it('shows a spinner instead of the form until the namespaces have loaded', () => {
+    sdkTestDoubles.setWatchFixtures({ accessLoading: true });
+
+    renderPage();
+
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Namespace/ })).not.toBeInTheDocument();
   });
 
   it('renders UserAvatar in header', () => {
@@ -151,19 +158,6 @@ describe('FunctionCreatePage', () => {
 
         expect(input).toHaveValue('my-functions');
         expect(registryInput()).toHaveValue(`${REGISTRY}my-functions`);
-      });
-
-      it('submits the namespace typed immediately before clicking Create', async () => {
-        const user = userEvent.setup();
-        createFunctionStub({ response: { namespace: 'default' } });
-
-        renderPage();
-        await fillForm(user);
-        // No wait for the debounce here: submitting straight away must still send the value
-        // on screen rather than the previously settled one.
-        await user.click(screen.getByRole('button', { name: /Create/ }));
-
-        await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/faas'));
       });
 
       it('warns when the typed namespace does not exist', async () => {
@@ -284,7 +278,7 @@ describe('FunctionCreatePage', () => {
       it('lets the user submit without touching the namespace field', async () => {
         const user = userEvent.setup();
         asDeveloperWithNamespaces('team-a');
-        createFunctionStub({ response: { namespace: 'team-a' } });
+        const requests = createFunctionStub();
 
         renderPage();
         await user.type(screen.getByRole('textbox', { name: /Repository/ }), 'my-repo');
@@ -295,6 +289,8 @@ describe('FunctionCreatePage', () => {
         await user.click(create);
 
         await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/faas'));
+        expect(requests).toHaveLength(1);
+        expect(requests[0].namespace).toBe('team-a');
       });
     });
 

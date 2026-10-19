@@ -20,8 +20,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+const sdk = vi.hoisted(() => ({ activeNamespace: '' }));
+
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
-  useActiveNamespace: () => ['', vi.fn()],
+  useActiveNamespace: () => [sdk.activeNamespace, vi.fn()],
 }));
 
 const emptySecrets: K8sKeyedResource[] = [];
@@ -42,7 +44,6 @@ describe('CreateFunctionForm', () => {
     configMaps: emptyConfigMaps,
     canCreateNamespaces: true,
     namespaces: [] as string[],
-    namespacesLoaded: true,
     setNamespaceWatchField: vi.fn(),
   };
 
@@ -56,6 +57,67 @@ describe('CreateFunctionForm', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    sdk.activeNamespace = '';
+  });
+
+  describe('namespace autofill', () => {
+    const NS_FIELD = { name: /Namespace/ };
+
+    it('fills the field with the console active namespace on load', async () => {
+      sdk.activeNamespace = 'demo';
+
+      renderForm({ namespaces: ['demo', 'other'] });
+
+      await waitFor(() => expect(screen.getByRole('textbox', NS_FIELD)).toHaveValue('demo'));
+    });
+
+    // Autofill is a starting point, not a lock. Re-applying it turns the field
+    // read-only in practice: the value reappears the moment it is emptied.
+    it('lets the user clear the autofilled namespace', async () => {
+      const user = userEvent.setup();
+      sdk.activeNamespace = 'demo';
+
+      renderForm({ namespaces: ['demo', 'other'] });
+      const field = screen.getByRole('textbox', NS_FIELD);
+      await waitFor(() => expect(field).toHaveValue('demo'));
+
+      await user.clear(field);
+
+      expect(field).toHaveValue('');
+    });
+
+    it('lets the user replace the autofilled namespace', async () => {
+      const user = userEvent.setup();
+      sdk.activeNamespace = 'demo';
+
+      renderForm({ namespaces: ['demo', 'other'] });
+      const field = screen.getByRole('textbox', NS_FIELD);
+      await waitFor(() => expect(field).toHaveValue('demo'));
+
+      await user.clear(field);
+      await user.type(field, 'mine');
+
+      expect(field).toHaveValue('mine');
+    });
+
+    // The prefill is resolved once, when the form mounts. A later change to
+    // the namespace list must not reach back into a field the user has since
+    // made their own.
+    it('does not overwrite a namespace typed before the list arrives', async () => {
+      const user = userEvent.setup();
+      sdk.activeNamespace = 'demo';
+
+      const { rerender } = renderForm({ namespaces: [] });
+      await user.type(screen.getByRole('textbox', NS_FIELD), 'mine');
+
+      rerender(
+        <AuthContext.Provider value={authContext}>
+          <CreateFunctionForm {...defaultProps} namespaces={['demo', 'other']} />
+        </AuthContext.Provider>,
+      );
+
+      expect(screen.getByRole('textbox', NS_FIELD)).toHaveValue('mine');
+    });
   });
 
   it('renders all form fields', () => {
@@ -488,12 +550,5 @@ describe('CreateFunctionForm', () => {
     await user.click(screen.getByRole('button', { name: /Add environment variable/ }));
 
     expect(screen.queryByText('Duplicate name')).not.toBeInTheDocument();
-  });
-
-  it('shows a spinner instead of the form until the namespaces have loaded', () => {
-    renderForm({ namespacesLoaded: false });
-
-    expect(screen.getByRole('progressbar')).toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: /Namespace/ })).not.toBeInTheDocument();
   });
 });
