@@ -68,7 +68,7 @@ function FunctionsListPageContent() {
       <DocumentTitle>{t('Functions')}</DocumentTitle>
       <NamespaceBar />
       <ListPageHeader title={t('Functions')}>
-        <UserAvatar enableReconnect />
+        <UserAvatar />
       </ListPageHeader>
       <PageSection>
         {errors.length > 0 &&

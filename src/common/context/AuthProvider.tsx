@@ -1,6 +1,6 @@
+import { Alert, Bullseye, Spinner } from '@patternfly/react-core';
 import { createContext, ReactNode, useCallback, useEffect, useState } from 'react';
-import { Spinner } from '@patternfly/react-core';
-import { disconnect, fetchConnection } from '../clients/authClient';
+import { disconnectGithubUser, fetchGithubUser } from '../clients/authClient';
 import { AUTH_EXPIRED_EVENT, AuthUser } from '../types';
 
 const NO_USER: AuthUser = { name: '', avatarUrl: '' };
@@ -20,30 +20,28 @@ export const AuthContext = createContext<AuthState>({
 });
 
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
-  // undefined until the backend answers, null once it says it holds nothing,
-  // the account once it does. The first two have to differ or the gate below
-  // cannot tell "not asked yet" from "nothing stored".
+  // undefined until the backend answers, null once it says it holds nothing
   const [authUser, setAuthUser] = useState<AuthUser | null | undefined>(undefined);
+  const [showExpiredAlert, setShowExpiredAlert] = useState(false);
 
   const onLogin = (authUser: AuthUser) => {
     setAuthUser(authUser);
+    setShowExpiredAlert(false);
   };
 
-  const clearAuth = useCallback(() => {
+  const onAuthExpired = useCallback(() => {
     setAuthUser(null);
+    setShowExpiredAlert(true);
   }, []);
 
   const onLogout = async () => {
-    await disconnect();
-    clearAuth();
+    await disconnectGithubUser();
+    setAuthUser(null);
   };
 
-  // The caller's OpenShift identity is the only key, so the backend can answer
-  // this for a browser that holds nothing. A user who stored a PAT before is
-  // connected here without typing it again.
   useEffect(() => {
     let cancelled = false;
-    fetchConnection()
+    fetchGithubUser()
       .then((connected) => {
         if (cancelled) return;
         if (connected) onLogin(connected);
@@ -59,15 +57,16 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, []);
 
   useEffect(() => {
-    window.addEventListener(AUTH_EXPIRED_EVENT, clearAuth);
-    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, clearAuth);
-  }, [clearAuth]);
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+  }, [onAuthExpired]);
 
-  // Children mount only once the answer is in, so "not connected yet" is not a
-  // state anything below here can observe. Rendering them earlier would prompt
-  // for a PAT the backend may already hold.
   if (authUser === undefined) {
-    return <Spinner aria-label="Loading" style={{ display: 'block', margin: '4rem auto' }} />;
+    return (
+      <Bullseye>
+        <Spinner aria-label="Loading" />
+      </Bullseye>
+    );
   }
 
   return (
@@ -79,6 +78,14 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
         onLogout,
       }}
     >
+      {showExpiredAlert && (
+        <Alert
+          variant="warning"
+          title="Your GitHub session has expired. Click 'Connect to GitHub' to reconnect."
+          isInline
+          className="pf-v6-u-m-md"
+        />
+      )}
       {children}
     </AuthContext.Provider>
   );

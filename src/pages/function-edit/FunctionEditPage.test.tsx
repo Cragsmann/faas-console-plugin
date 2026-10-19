@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { connectionStub } from '../../common/testing/authClientStub';
+import { fetchGithubUserStub } from '../../common/testing/authClientStub';
 import { timerFake } from '../../common/testing/timerFake';
 import {
   getFilesStub,
@@ -71,7 +71,7 @@ function renderEditPage(name: string) {
 
 describe('FunctionEditPage', () => {
   beforeEach(() => {
-    connectionStub();
+    fetchGithubUserStub();
   });
 
   it('shows loading state in tree while fetching files', async () => {

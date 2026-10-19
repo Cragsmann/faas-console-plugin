@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { useContext } from 'react';
 import { AuthContext, AuthProvider } from './AuthProvider';
 import { AUTH_EXPIRED_EVENT } from '../types';
-import { connectionStub, noConnectionStub } from '../testing/authClientStub';
+import { fetchGithubUserStub, noGithubUserStub } from '../testing/authClientStub';
 
 const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
 
@@ -32,7 +32,7 @@ describe('AuthProvider', () => {
   // The fix this whole change is for: a user whose PAT is already in a Secret
   // opens the console and is connected, having typed nothing.
   it('connects a user whose credential the backend already holds', async () => {
-    connectionStub();
+    fetchGithubUserStub();
 
     renderProvider();
 
@@ -40,7 +40,7 @@ describe('AuthProvider', () => {
   });
 
   it('stays disconnected when the backend holds no credential', async () => {
-    noConnectionStub();
+    noGithubUserStub();
 
     renderProvider();
 
@@ -48,7 +48,9 @@ describe('AuthProvider', () => {
   });
 
   it('stays disconnected when the backend cannot answer', async () => {
-    connectionStub({ errorResponse: { message: 'credential store unavailable', status: 503 } });
+    fetchGithubUserStub({
+      errorResponse: { message: 'credential store unavailable', status: 503 },
+    });
 
     renderProvider();
 
@@ -58,7 +60,7 @@ describe('AuthProvider', () => {
   // Children must not mount before the answer arrives, or they would act on
   // "not connected" when the backend is about to say otherwise.
   it('holds its children back until the backend answers', () => {
-    connectionStub();
+    fetchGithubUserStub();
 
     renderProvider();
 
@@ -67,7 +69,7 @@ describe('AuthProvider', () => {
   });
 
   it('disconnects when a request reports the credential is gone', async () => {
-    connectionStub();
+    fetchGithubUserStub();
 
     renderProvider();
     expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();

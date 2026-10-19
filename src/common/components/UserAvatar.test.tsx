@@ -4,7 +4,7 @@ import { http, HttpResponse, delay } from 'msw';
 import { UserAvatar } from './UserAvatar';
 import { AuthContext } from '../context/AuthProvider';
 import { ReactNode } from 'react';
-import { connectStub } from '../testing/authClientStub';
+import { connectGithubUserStub } from '../testing/authClientStub';
 import { BACKEND_API } from '../testing/constants';
 import { server } from '../testing/mswServer';
 
@@ -43,18 +43,24 @@ function connectedContext(overrides = {}) {
 
 describe('UserAvatar', () => {
   beforeEach(() => {
-    connectStub({ response: { login: 'twoGiants', avatarUrl: '' } });
+    connectGithubUserStub({ response: { login: 'twoGiants', avatarUrl: '' } });
   });
 
   describe('rendering', () => {
     it('renders "Connect to GitHub" when not connected', () => {
-      renderWithContext(<UserAvatar enableReconnect={false} />);
+      renderWithContext(<UserAvatar />);
 
-      expect(screen.getByText('Connect to GitHub')).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: /Connect to GitHub/ })).toBeInTheDocument();
+    });
+
+    it('shows PAT modal automatically when not connected', () => {
+      renderWithContext(<UserAvatar />);
+
+      expect(screen.getByText('Personal Access Token')).toBeInTheDocument();
     });
 
     it('renders username when connected', () => {
-      renderWithContext(<UserAvatar enableReconnect />, connectedContext());
+      renderWithContext(<UserAvatar />, connectedContext());
 
       expect(screen.getByText('twoGiants')).toBeInTheDocument();
     });
@@ -62,7 +68,7 @@ describe('UserAvatar', () => {
     it('renders the GitHub avatar when the user has one', () => {
       const avatarUrl = 'https://avatars.githubusercontent.com/u/1?v=4';
       renderWithContext(
-        <UserAvatar enableReconnect />,
+        <UserAvatar />,
         connectedContext({ user: { name: 'twoGiants', avatarUrl } }),
       );
 
@@ -74,22 +80,10 @@ describe('UserAvatar', () => {
     });
 
     it('falls back to the generic icon when there is no avatar URL', () => {
-      renderWithContext(<UserAvatar enableReconnect />, connectedContext());
+      renderWithContext(<UserAvatar />, connectedContext());
 
       expect(document.querySelector('[data-test="user-avatar"]')).not.toBeInTheDocument();
       expect(screen.getByText('twoGiants')).toBeInTheDocument();
-    });
-
-    it('button is disabled when enableReconnect is false', async () => {
-      const user = userEvent.setup();
-
-      renderWithContext(<UserAvatar enableReconnect={false} />);
-
-      const button = screen.getByRole('button', { name: 'Connect to GitHub' });
-      expect(button).toBeDisabled();
-
-      await user.click(button);
-      expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
     });
   });
 
@@ -97,7 +91,7 @@ describe('UserAvatar', () => {
     it('shows Disconnect in the user menu', async () => {
       const user = userEvent.setup();
 
-      renderWithContext(<UserAvatar enableReconnect />, connectedContext());
+      renderWithContext(<UserAvatar />, connectedContext());
 
       await user.click(screen.getByRole('button', { name: /twoGiants/ }));
 
@@ -108,7 +102,7 @@ describe('UserAvatar', () => {
       const user = userEvent.setup();
       const onLogout = vi.fn();
 
-      renderWithContext(<UserAvatar enableReconnect />, connectedContext({ onLogout }));
+      renderWithContext(<UserAvatar />, connectedContext({ onLogout }));
 
       await user.click(screen.getByRole('button', { name: /twoGiants/ }));
       await user.click(screen.getByText('Disconnect'));
@@ -117,7 +111,7 @@ describe('UserAvatar', () => {
     });
 
     it('does not show the user menu when disconnected', () => {
-      renderWithContext(<UserAvatar enableReconnect={false} />);
+      renderWithContext(<UserAvatar />);
 
       expect(screen.queryByText('twoGiants')).not.toBeInTheDocument();
     });
@@ -125,13 +119,13 @@ describe('UserAvatar', () => {
 
   describe('modal auto-open', () => {
     it('opens the modal when the backend holds no credential', () => {
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       expect(screen.getByText('Personal Access Token')).toBeInTheDocument();
     });
 
     it('does not prompt a user when the backend has a credential', () => {
-      renderWithContext(<UserAvatar enableReconnect />, connectedContext());
+      renderWithContext(<UserAvatar />, connectedContext());
 
       expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
       expect(screen.getByText('twoGiants')).toBeInTheDocument();
@@ -140,22 +134,22 @@ describe('UserAvatar', () => {
     it('does not reopen the modal after the user dismisses it', async () => {
       const user = userEvent.setup();
 
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
       expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
     });
 
-    it('does not auto-open modal when enableReconnect is false', () => {
-      renderWithContext(<UserAvatar enableReconnect={false} />);
+    it('auto-opens modal when not connected', () => {
+      renderWithContext(<UserAvatar />);
 
-      expect(screen.queryByText('Personal Access Token')).not.toBeInTheDocument();
+      expect(screen.getByText('Personal Access Token')).toBeInTheDocument();
     });
   });
 
   describe('OAuth button placeholder', () => {
     it('renders a disabled "Sign in with GitHub" button', () => {
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       const oauthButton = screen.getByRole('button', { name: /Sign in with GitHub/i });
       expect(oauthButton).toHaveAttribute('aria-disabled', 'true');
@@ -165,7 +159,7 @@ describe('UserAvatar', () => {
       const user = userEvent.setup();
       const onLogin = vi.fn();
 
-      renderWithContext(<UserAvatar enableReconnect />, authContext({ onLogin }));
+      renderWithContext(<UserAvatar />, authContext({ onLogin }));
 
       const oauthButton = screen.getByRole('button', { name: /Sign in with GitHub/i });
       await user.click(oauthButton);
@@ -176,7 +170,7 @@ describe('UserAvatar', () => {
 
   describe('PAT modal', () => {
     it('Connect button disabled when input is empty', () => {
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
     });
@@ -191,7 +185,7 @@ describe('UserAvatar', () => {
         }),
       );
 
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_valid');
       await user.click(screen.getByRole('button', { name: 'Connect' }));
@@ -203,9 +197,9 @@ describe('UserAvatar', () => {
 
     it('shows error alert when the backend rejects the PAT', async () => {
       const user = userEvent.setup();
-      connectStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
+      connectGithubUserStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_bad');
       await user.click(screen.getByRole('button', { name: 'Connect' }));
@@ -217,7 +211,7 @@ describe('UserAvatar', () => {
       const user = userEvent.setup();
       const onLogin = vi.fn();
 
-      renderWithContext(<UserAvatar enableReconnect />, authContext({ onLogin }));
+      renderWithContext(<UserAvatar />, authContext({ onLogin }));
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_valid');
       await user.keyboard('{Enter}');
@@ -230,7 +224,7 @@ describe('UserAvatar', () => {
     it('closes modal when Cancel is clicked', async () => {
       const user = userEvent.setup();
 
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       expect(screen.getByText('Personal Access Token')).toBeInTheDocument();
 
@@ -241,9 +235,9 @@ describe('UserAvatar', () => {
 
     it('clears PAT input and error on cancel', async () => {
       const user = userEvent.setup();
-      connectStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
+      connectGithubUserStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
 
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_bad');
       await user.click(screen.getByRole('button', { name: 'Connect' }));
@@ -266,7 +260,7 @@ describe('UserAvatar', () => {
         }),
       );
 
-      renderWithContext(<UserAvatar enableReconnect />);
+      renderWithContext(<UserAvatar />);
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_slow');
       await user.click(screen.getByRole('button', { name: 'Connect' }));
