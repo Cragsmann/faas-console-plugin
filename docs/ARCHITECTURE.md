@@ -60,9 +60,10 @@ Arrows mean "imports / depends on."
 
 ### Clients
 
-`common/clients/` contains thin wrappers around external APIs. Two forms:
+`common/clients/` contains thin wrappers around external APIs. Three forms:
 
-- **Plain async functions** (e.g., `functionsClient.ts`) -- stateless fetch wrappers that hooks call.
+- **`httpClient.ts`** -- the single fetch boundary. Wraps the SDK's `consoleFetch`/`consoleFetchJSON` with 401 -> `AUTH_EXPIRED_EVENT` dispatch and header flattening. All HTTP clients import `customFetch`/`customFetchJSON` from here, never from the SDK directly.
+- **Plain async functions** (e.g., `functionsClient.ts`, `authClient.ts`) -- stateless fetch wrappers that hooks call, built on `httpClient`.
 - **Hooks** (e.g., `useCluster.ts`) -- when the client wraps a React-aware SDK call such as `useK8sWatchResource`, it stays as a hook.
 
 ### Hooks
