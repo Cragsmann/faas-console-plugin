@@ -51,14 +51,11 @@ type funcYamlFields struct {
 }
 
 func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
-	credential, err := h.credentialFor(r)
+	ocpToken, _ := extractOCPToken(r)
+
+	credential, err := h.credentials.GetCredential(r.Context(), ocpToken)
 	if err != nil {
 		writeAuthError(w, err)
-		return
-	}
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "Authorization header is required")
 		return
 	}
 

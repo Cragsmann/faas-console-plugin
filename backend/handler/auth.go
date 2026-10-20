@@ -3,39 +3,14 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/openshift/faas-console-plugin/backend/auth"
-	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/scm"
 )
-
-// credentialFor finds the SCM credential belonging to whoever sent r. The
-// OpenShift identity the console proxy forwards is the only key.
-func (h *Handlers) credentialFor(r *http.Request) (auth.Credential, error) {
-	user, err := h.currentUser(r)
-	if err != nil {
-		return auth.Credential{}, err
-	}
-	return h.credentials.GetCredential(r.Context(), user)
-}
-
-func (h *Handlers) currentUser(r *http.Request) (identity.User, error) {
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		return identity.User{}, fmt.Errorf("%w: no OpenShift user token", identity.ErrUnauthenticated)
-	}
-
-	user, err := h.identityResolver.ResolveUserIdentity(r.Context(), ocpToken)
-	if err != nil {
-		return identity.User{}, fmt.Errorf("resolve OpenShift user: %w", err)
-	}
-	return user, nil
-}
 
 func extractOCPToken(r *http.Request) (string, bool) {
 	header := r.Header.Get("Authorization")
@@ -50,7 +25,7 @@ func extractOCPToken(r *http.Request) (string, bool) {
 // lets the frontend read that one status as "connect to GitHub".
 func writeAuthError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, identity.ErrUnauthenticated),
+	case errors.Is(err, auth.ErrUnauthenticated),
 		errors.Is(err, auth.ErrNoCredential):
 		slog.Warn("rejecting request without a usable credential", "err", err)
 		writeError(w, http.StatusUnauthorized, "authentication required")
@@ -61,11 +36,7 @@ func writeAuthError(w http.ResponseWriter, err error) {
 }
 
 func (h *Handlers) HandleSaveGitHubToken(w http.ResponseWriter, r *http.Request) {
-	ocpUser, err := h.currentUser(r)
-	if err != nil {
-		writeAuthError(w, err)
-		return
-	}
+	ocpToken, _ := extractOCPToken(r)
 
 	var req struct {
 		PAT string `json:"pat"`
@@ -98,29 +69,32 @@ func (h *Handlers) HandleSaveGitHubToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = h.credentials.SaveCredential(r.Context(), ocpUser, auth.Credential{
+	err = h.credentials.SaveCredential(r.Context(), ocpToken, auth.Credential{
 		Owner:     user.Login,
 		AvatarURL: user.AvatarURL,
 		Secret:    req.PAT,
 		Type:      auth.CredentialTypePAT,
 	})
 	if err != nil {
-		slog.Error("failed to store the github token", "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to store credential")
+		// writeAuthError splits these: a refused identity is the caller's
+		// problem, anything else is the store being unreachable.
+		writeAuthError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, githubAccount(user.Login, user.AvatarURL))
 }
 
-func (h *Handlers) HandleGetGitHubToken(w http.ResponseWriter, r *http.Request) {
-	credential, err := h.credentialFor(r)
+func (h *Handlers) HandleGetGitHubUser(w http.ResponseWriter, r *http.Request) {
+	ocpToken, _ := extractOCPToken(r)
+
+	credential, err := h.credentials.GetCredential(r.Context(), ocpToken)
 	if errors.Is(err, auth.ErrNoCredential) {
 		writeError(w, http.StatusNotFound, "no stored credential")
 		return
 	}
 	if err != nil {
-		if errors.Is(err, identity.ErrUnauthenticated) {
+		if errors.Is(err, auth.ErrUnauthenticated) {
 			writeAuthError(w, err)
 			return
 		}
@@ -133,16 +107,11 @@ func (h *Handlers) HandleGetGitHubToken(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handlers) HandleDeleteGitHubToken(w http.ResponseWriter, r *http.Request) {
-	ocpUser, err := h.currentUser(r)
-	if err != nil {
-		// Nothing to revoke that we can identify. The browser disconnects
-		// regardless, so this is not worth failing the request over.
-		slog.Warn("disconnect without a resolvable OpenShift user", "err", err)
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
+	ocpToken, _ := extractOCPToken(r)
 
-	if err := h.credentials.DeleteCredential(r.Context(), ocpUser); err != nil {
+	// Nothing to revoke if the caller cannot be identified. The browser
+	// disconnects regardless, so this is not worth failing the request over.
+	if err := h.credentials.DeleteCredential(r.Context(), ocpToken); err != nil {
 		slog.Error("failed to delete the stored credential", "err", err)
 	}
 

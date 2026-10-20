@@ -35,11 +35,11 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 
 		Expect(w.Code).To(Equal(http.StatusCreated))
 
-		credential, err := h.credentials.GetCredential(context.Background(), testOCPUser)
+		credential, err := h.credentials.GetCredential(context.Background(), testOCPToken)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(credential.Secret).To(Equal("ghp_valid"))
 
-		_, err = h.credentials.GetCredential(context.Background(), mallory)
+		_, err = storeAs(mallory).GetCredential(context.Background(), testOCPToken)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -127,7 +127,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubToken(w, getRequest())
+		h.HandleGetGitHubUser(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var resp map[string]string
@@ -142,7 +142,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubToken(w, getRequest())
+		h.HandleGetGitHubUser(w, getRequest())
 
 		Expect(w.Body.String()).NotTo(ContainSubstring("test-pat"))
 	})
@@ -154,7 +154,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := resolvingTo(mallory)
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubToken(w, getRequest())
+		h.HandleGetGitHubUser(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNotFound))
 	})
@@ -163,7 +163,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubToken(w, getRequest())
+		h.HandleGetGitHubUser(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
@@ -175,7 +175,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := failingToResolve(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubToken(w, getRequest())
+		h.HandleGetGitHubUser(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
 	})
@@ -226,18 +226,18 @@ var mallory = identity.User{Username: "mallory", UID: "mallory-uid"}
 
 // resolvingTo builds handlers whose requests authenticate as user.
 func resolvingTo(user identity.User) *Handlers {
-	return testHandlers(Handlers{identityResolver: &identity.ResolverStub{
+	return testHandlersResolving(Handlers{}, &identity.ResolverStub{
 		OnResolve: func(context.Context, string) (identity.User, error) { return user, nil },
-	}})
+	})
 }
 
 // failingToResolve builds handlers that cannot identify their caller. The error
 // is the test's to choose: whether it wraps identity.ErrUnauthenticated is what
 // decides between blaming the caller and blaming the backend.
 func failingToResolve(cause error) *Handlers {
-	return testHandlers(Handlers{identityResolver: &identity.ResolverStub{
+	return testHandlersResolving(Handlers{}, &identity.ResolverStub{
 		OnResolve: func(context.Context, string) (identity.User, error) { return identity.User{}, cause },
-	}})
+	})
 }
 
 func saveTokenRequest(pat string) *http.Request {

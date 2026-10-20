@@ -1,8 +1,8 @@
 // Package auth keeps SCM credentials in Kubernetes Secrets instead of the
-// browser. A caller's OpenShift identity is the only key: it names the Secret
-// and is verified against the binding inside it, and the credential itself
-// never leaves the backend. Who the caller is comes from the auth/identity
-// subpackage.
+// browser. Callers hand it the OpenShift bearer token the console proxy
+// forwarded and get a credential back; resolving that token to a user, and
+// keying the Secret by it, is this package's own business. The credential
+// itself never leaves the backend.
 package auth
 
 import (
@@ -33,6 +33,11 @@ const (
 
 var ErrNoCredential = errors.New("no stored credential for user")
 
+// ErrUnauthenticated is re-exported so callers can tell "the cluster would not
+// say who this is" from "this caller has nothing stored" without reaching into
+// the identity subpackage.
+var ErrUnauthenticated = identity.ErrUnauthenticated
+
 type Credential struct {
 	Owner     string // SCM username
 	AvatarURL string
@@ -43,6 +48,7 @@ type Credential struct {
 type Store struct {
 	client    kubernetes.Interface
 	namespace string
+	resolver  identity.Resolver
 }
 
 type secretData struct {
@@ -54,7 +60,7 @@ type secretData struct {
 	ExpiresAt  time.Time     `json:"expiresAt"`
 }
 
-func NewStore(cfg *rest.Config, namespace string) (*Store, error) {
+func NewStore(cfg *rest.Config, namespace string, resolver identity.Resolver) (*Store, error) {
 	if namespace == "" {
 		return nil, fmt.Errorf("credential namespace is required")
 	}
@@ -62,14 +68,32 @@ func NewStore(cfg *rest.Config, namespace string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes client: %w", err)
 	}
-	return &Store{client: client, namespace: namespace}, nil
+	return &Store{client: client, namespace: namespace, resolver: resolver}, nil
 }
 
-func NewStoreWithClient(client kubernetes.Interface, namespace string) *Store {
-	return &Store{client: client, namespace: namespace}
+func NewStoreWithClient(client kubernetes.Interface, namespace string, resolver identity.Resolver) *Store {
+	return &Store{client: client, namespace: namespace, resolver: resolver}
 }
 
-func (s *Store) SaveCredential(ctx context.Context, user identity.User, cred Credential) error {
+// userFor turns the console's bearer token into the user it belongs to. Every
+// public method starts here, so a caller can never reach a credential without
+// having proved whose it is.
+func (s *Store) userFor(ctx context.Context, ocpToken string) (identity.User, error) {
+	if ocpToken == "" {
+		return identity.User{}, fmt.Errorf("%w: no OpenShift user token", identity.ErrUnauthenticated)
+	}
+	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
+	if err != nil {
+		return identity.User{}, fmt.Errorf("resolve OpenShift user: %w", err)
+	}
+	return user, nil
+}
+
+func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Credential) error {
+	user, err := s.userFor(ctx, ocpToken)
+	if err != nil {
+		return err
+	}
 	if user.Username == "" {
 		return fmt.Errorf("storing a credential requires an OpenShift user")
 	}
@@ -84,7 +108,12 @@ func (s *Store) SaveCredential(ctx context.Context, user identity.User, cred Cre
 	})
 }
 
-func (s *Store) GetCredential(ctx context.Context, user identity.User) (Credential, error) {
+func (s *Store) GetCredential(ctx context.Context, ocpToken string) (Credential, error) {
+	user, err := s.userFor(ctx, ocpToken)
+	if err != nil {
+		return Credential{}, err
+	}
+
 	data, err := s.read(ctx, user)
 	if err != nil {
 		return Credential{}, err
@@ -101,7 +130,16 @@ func (s *Store) GetCredential(ctx context.Context, user identity.User) (Credenti
 	}, nil
 }
 
-func (s *Store) DeleteCredential(ctx context.Context, user identity.User) error {
+func (s *Store) DeleteCredential(ctx context.Context, ocpToken string) error {
+	user, err := s.userFor(ctx, ocpToken)
+	if err != nil {
+		return err
+	}
+
+	return s.deleteFor(ctx, user)
+}
+
+func (s *Store) deleteFor(ctx context.Context, user identity.User) error {
 	err := s.client.CoreV1().Secrets(s.namespace).Delete(ctx, secretName(user), metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete credential secret: %w", err)
@@ -142,7 +180,7 @@ func (s *Store) dropIfExpired(ctx context.Context, user identity.User, data secr
 	if !time.Now().After(data.ExpiresAt) {
 		return nil
 	}
-	if err := s.DeleteCredential(ctx, user); err != nil {
+	if err := s.deleteFor(ctx, user); err != nil {
 		slog.Error("failed to delete expired credential", "err", err)
 	}
 	return ErrNoCredential

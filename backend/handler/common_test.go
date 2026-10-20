@@ -43,19 +43,28 @@ func credentialSecrets() []corev1.Secret {
 	return list.Items
 }
 
-// testHandlers gives h a credential store holding testOCPUser's PAT, plus an
-// identity resolver, so credential lookup takes the same path as production.
-// The tests run against a real auth.Store over a fake cluster rather than a
-// stand-in, so the ownership and expiry rules they exercise are the ones that
-// ship. Pass the struct by value: callers set only the fields they care about
-// and never have to remember the rest. A resolver set by the caller is kept,
-// which is how a test plays a different user.
+// testHandlers gives h a credential store holding testOCPUser's PAT, so
+// credential lookup takes the same path as production. The tests run against a
+// real auth.Store over a fake cluster rather than a stand-in, so the ownership
+// and expiry rules they exercise are the ones that ship. Pass the struct by
+// value: callers set only the fields they care about and never have to
+// remember the rest.
 func testHandlers(h Handlers) *Handlers {
+	return testHandlersResolving(h, &identity.ResolverStub{
+		OnResolve: func(context.Context, string) (identity.User, error) { return testOCPUser, nil },
+	})
+}
+
+// testHandlersResolving is how a test plays a different user, or none: the
+// resolver now belongs to the store rather than to the handlers.
+func testHandlersResolving(h Handlers, resolver identity.Resolver) *Handlers {
 	// A cluster of its own per call, so one spec revoking a credential cannot
 	// change what the next one sees.
 	credentialCluster = fake.NewClientset()
-	store := auth.NewStoreWithClient(credentialCluster, testNamespace)
-	err := store.SaveCredential(context.Background(), testOCPUser, auth.Credential{
+	seed := auth.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
+		OnResolve: func(context.Context, string) (identity.User, error) { return testOCPUser, nil },
+	})
+	err := seed.SaveCredential(context.Background(), testOCPToken, auth.Credential{
 		Owner:  "tester",
 		Secret: "test-pat",
 		Type:   auth.CredentialTypePAT,
@@ -63,14 +72,18 @@ func testHandlers(h Handlers) *Handlers {
 	if err != nil {
 		panic(fmt.Sprintf("seed test credential: %v", err))
 	}
-	h.credentials = store
 
-	if h.identityResolver == nil {
-		h.identityResolver = &identity.ResolverStub{
-			OnResolve: func(context.Context, string) (identity.User, error) { return testOCPUser, nil },
-		}
-	}
+	h.credentials = auth.NewStoreWithClient(credentialCluster, testNamespace, resolver)
 	return &h
+}
+
+// storeAs reads the same fake cluster as the handlers under test, but resolves
+// every token to user. It is how a spec checks a credential is not reachable
+// by somebody else.
+func storeAs(user identity.User) *auth.Store {
+	return auth.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
+		OnResolve: func(context.Context, string) (identity.User, error) { return user, nil },
+	})
 }
 
 // authenticate marks req as coming through the console proxy, which forwards
