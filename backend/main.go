@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/openshift/faas-console-plugin/backend/auth"
+	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/handler"
 	"github.com/openshift/faas-console-plugin/backend/scm"
@@ -26,12 +27,8 @@ import (
 )
 
 const (
-	defaultCAPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	// defaultCredentialNamespace is where the chart installs the plugin, and so
-	// where its Secrets belong. It is the answer for local runs only: in the pod
-	// POD_NAMESPACE reports where the chart actually went and wins. There is no
-	// third way to set it, so dev runs always land in one predictable place.
-	defaultCredentialNamespace = "console-functions-plugin"
+	defaultCAPath                 = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	defaultConsolePluginNamespace = "console-functions-plugin"
 )
 
 //go:embed static/*
@@ -43,9 +40,9 @@ func main() {
 	certFile := flag.String("cert", "/var/cert/tls.crt", "TLS certificate file")
 	keyFile := flag.String("key", "/var/cert/tls.key", "TLS key file")
 	caPath := flag.String("kube-root-ca-path", defaultCAPath, "path to CA certificate for cluster TLS probe")
-	kubeHost := flag.String("kube-host", "", "Kubernetes API server URL for dev/test (empty uses in-cluster config)")
+	kubeHost := flag.String("kube-host", "", "Kubernetes API server URL (empty uses in-cluster config)")
 	kubeAPIServer := flag.String("external-api-server-url", "", "external Kubernetes API server URL embedded in generated kubeconfigs")
-	ghAPIURL := flag.String("gh-api-url", "", "GitHub API base URL (for testing with fake server)")
+	ghAPIURL := flag.String("gh-api-url", "", "GitHub API base URL")
 	saTokenExpiry := flag.String("sa-token-expiry", "", "ServiceAccount token expiry is a duration in common notation, e.g. 7d, 12h, 10m")
 	flag.Parse()
 
@@ -76,8 +73,7 @@ func main() {
 		}
 	}
 
-	// A non-empty --kube-host means the backend runs outside the cluster, on a
-	// developer's laptop.
+	// A non-empty --kube-host means the backend runs outside the cluster.
 	cfg, err := credentialRESTConfig(*kubeHost != "")
 	if err != nil {
 		log.Fatal(err)
@@ -85,23 +81,25 @@ func main() {
 
 	namespace := os.Getenv("POD_NAMESPACE")
 	if namespace == "" {
-		namespace = defaultCredentialNamespace
+		namespace = defaultConsolePluginNamespace
 	}
-	credentials, err := auth.NewStore(cfg, namespace)
+	caCert, err := readCACert(*caPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	credentials, err := auth.NewStore(cfg, namespace, identity.NewResolver(*kubeHost, caCert))
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("Storing SCM credentials as Secrets in namespace %q", namespace)
 
-	h, err := handler.New(*caPath, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, credentials)
-	if err != nil {
-		log.Fatal(err)
-	}
+	h := handler.New(caCert, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, credentials)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
 	mux.HandleFunc("POST /api/v1/auth/github-token", h.HandleSaveGitHubToken)
-	mux.HandleFunc("GET /api/v1/auth/github-token", h.HandleGetGitHubToken)
+	mux.HandleFunc("GET /api/v1/auth/github-token", h.HandleGetGitHubUser)
 	mux.HandleFunc("DELETE /api/v1/auth/github-token", h.HandleDeleteGitHubToken)
 	mux.HandleFunc("GET /api/v1/func/list", h.HandleListFunctions)
 	mux.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
@@ -149,13 +147,24 @@ func main() {
 	}
 }
 
+func readCACert(path string) ([]byte, error) {
+	if path == "" {
+		return nil, nil
+	}
+	caCert, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read CA certificate %q: %w", path, err)
+	}
+	return caCert, nil
+}
+
 // credentialRESTConfig builds the client config the credential store talks to
-// the cluster with. Outside the pod there is no ServiceAccount token to read, so a
-// developer's kubeconfig stands in for it; both point at a real cluster.
-func credentialRESTConfig(dev bool) (*rest.Config, error) {
+// the cluster with. Outside the pod there is no ServiceAccount token to read,
+// so a kubeconfig stands in for it; both point at a real cluster.
+func credentialRESTConfig(outOfCluster bool) (*rest.Config, error) {
 	var cfg *rest.Config
 	var err error
-	if dev {
+	if outOfCluster {
 		rules := clientcmd.NewDefaultClientConfigLoadingRules()
 		cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{}).ClientConfig()
 		if err != nil {
