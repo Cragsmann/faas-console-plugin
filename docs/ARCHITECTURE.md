@@ -130,8 +130,8 @@ Go + `net/http` standard library. Key dependencies:
 - `scm` has no knowledge of cluster or functions
 - `functions` imports `scm` only for `scm.Platform` and `scm.FileEntry` types
 - `config` is imported by `handler`, `functions`, and `main` only; it owns runtime configuration and package-level wiring
-- `auth/identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend, so `auth` and `handler` can both depend on it without a cycle
-- `auth` imports `auth/identity` because a stored credential is meaningless without the user it belongs to. It is a subpackage rather than part of `auth` itself so that "which OpenShift user is this?" stays answerable without dragging in credential storage
+- `auth/identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend. Only `auth` depends on it; `handler` does not, which is the point of the next bullet
+- `auth` imports `auth/identity` because a stored credential is meaningless without the user it belongs to, and it owns the `identity.Resolver`. `handler` hands `auth` the raw bearer token and gets a credential back, so it never holds an `identity.User` and never mediates between the two. It is a subpackage rather than part of `auth` itself so that "which OpenShift user is this?" stays answerable without dragging in credential storage
 - `auth` knows nothing about `scm`, `cluster`, or HTTP. The handlers that store and read the credential live in `handler` (as `handler/auth.go`, alongside the request-scoped plumbing: `currentUser`, `credentialFor`, `writeAuthError`), which is what keeps `auth` free of the SCM dependency it would otherwise need to verify a PAT
 
 ### Key Decisions
@@ -163,7 +163,7 @@ The OCP service CA operator rotates the serving cert/key automatically. `tlsrelo
 
 A user's SCM credential lives in one Secret named after a SHA-256 of their identity (the UID where they have one, the username otherwise, prefixed so the two cannot collide). The name is hashed because it is not a secret: it shows up in audit logs and in `oc get secrets` for anyone with read access to the namespace. Connecting again overwrites that Secret rather than adding another, so a user never accumulates live PATs nobody deletes, and revocation has exactly one thing to delete.
 
-`auth.Store.Get` takes the caller's `identity.User` as a parameter, so the check cannot be forgotten at a call site; a mismatch is an error, not a flag the caller inspects. The binding written into the Secret is verified on every read rather than inferred from where the Secret was found, since a deleted and recreated account could hash to the same name. There is no `SessionStore` interface: the store has one implementation, and handler tests run against a real `auth.Store` over `k8s.io/client-go/kubernetes/fake` so the ownership and expiry rules they exercise are the ones that ship.
+`auth.Store` takes the console's bearer token and resolves it itself, so a caller cannot reach a credential without having proved whose it is; the check cannot be forgotten at a call site, and a mismatch is an error rather than a flag the caller inspects. `auth.ErrUnauthenticated` is re-exported so `handler` can tell "the cluster would not say who this is" from "nothing is stored" without importing `identity`. The binding written into the Secret is verified on every read rather than inferred from where the Secret was found, since a deleted and recreated account could hash to the same name. There is no `SessionStore` interface: the store has one implementation, and handler tests run against a real `auth.Store` over `k8s.io/client-go/kubernetes/fake` so the ownership and expiry rules they exercise are the ones that ship.
 
 **The OpenShift identity is the only key, so there is no second token**
 

@@ -228,11 +228,11 @@ var _ = Describe("POST /api/v1/func/create", func() {
 	})
 
 	It("rejects a session belonging to a different OpenShift user", func() {
-		h := testHandlers(Handlers{identityResolver: &identity.ResolverStub{
+		h := testHandlersResolving(Handlers{}, &identity.ResolverStub{
 			OnResolve: func(context.Context, string) (identity.User, error) {
 				return identity.User{Username: "mallory", UID: "mallory-uid"}, nil
 			},
-		}})
+		})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
 		authenticate(req)
 		w := httptest.NewRecorder()
