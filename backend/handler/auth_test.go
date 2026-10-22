@@ -16,7 +16,7 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/scm"
 )
 
-var _ = Describe("POST /api/v1/auth/github-token", func() {
+var _ = Describe("POST /api/v1/scm/github/credential", func() {
 	BeforeEach(func() {
 		withSCMStub(&scm.ClientStub{
 			OnGetUser: func(ctx context.Context) (*scm.User, error) {
@@ -31,7 +31,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
+		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusCreated))
 
@@ -46,7 +46,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 	It("returns the GitHub profile, never the token", func() {
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
+		resolvingTo(testOCPUser).HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		var resp map[string]string
 		Expect(json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
@@ -58,7 +58,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 	It("returns 400 when no token was sent", func() {
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest(""))
+		resolvingTo(testOCPUser).HandleSaveSCMCredential(w, saveTokenRequest(""))
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -73,7 +73,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 		})
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest("ghp_bad"))
+		resolvingTo(testOCPUser).HandleSaveSCMCredential(w, saveTokenRequest("ghp_bad"))
 
 		Expect(w.Code).To(Equal(http.StatusForbidden))
 		// A token GitHub refuses is never written, so the caller keeps whatever
@@ -85,7 +85,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
-		h.HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
+		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 		// Nothing is stored for a caller with no identity to bind to, so the
@@ -100,7 +100,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 		h := failingToResolve(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
-		h.HandleSaveGitHubToken(w, saveTokenRequest("ghp_valid"))
+		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
 		Expect(credentialSecrets()).To(HaveLen(1))
@@ -112,15 +112,15 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 		req.Header.Del("Authorization")
 		w := httptest.NewRecorder()
 
-		h.HandleSaveGitHubToken(w, req)
+		h.HandleSaveSCMCredential(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
 })
 
-var _ = Describe("GET /api/v1/auth/github-token", func() {
+var _ = Describe("GET /api/v1/scm/github/credential", func() {
 	getRequest := func() *http.Request {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/github-token", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/scm/github/credential", nil)
 		req.Header.Set("Authorization", "Bearer "+testOCPToken)
 		return req
 	}
@@ -131,7 +131,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubUser(w, getRequest())
+		h.HandleGetSCMCredential(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var resp map[string]string
@@ -146,7 +146,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubUser(w, getRequest())
+		h.HandleGetSCMCredential(w, getRequest())
 
 		Expect(w.Body.String()).NotTo(ContainSubstring("test-pat"))
 	})
@@ -158,7 +158,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := resolvingTo(mallory)
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubUser(w, getRequest())
+		h.HandleGetSCMCredential(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNotFound))
 	})
@@ -167,7 +167,7 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubUser(w, getRequest())
+		h.HandleGetSCMCredential(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
@@ -179,15 +179,15 @@ var _ = Describe("GET /api/v1/auth/github-token", func() {
 		h := failingToResolve(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
-		h.HandleGetGitHubUser(w, getRequest())
+		h.HandleGetSCMCredential(w, getRequest())
 
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 
-var _ = Describe("DELETE /api/v1/auth/github-token", func() {
+var _ = Describe("DELETE /api/v1/scm/github/credential", func() {
 	deleteRequest := func() *http.Request {
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/github-token", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/scm/github/credential", nil)
 		authenticate(req)
 		return req
 	}
@@ -196,7 +196,7 @@ var _ = Describe("DELETE /api/v1/auth/github-token", func() {
 		h := resolvingTo(testOCPUser)
 		w := httptest.NewRecorder()
 
-		h.HandleDeleteGitHubToken(w, deleteRequest())
+		h.HandleDeleteSCMCredential(w, deleteRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
 		Expect(credentialSecrets()).To(BeEmpty())
@@ -208,7 +208,7 @@ var _ = Describe("DELETE /api/v1/auth/github-token", func() {
 		h := resolvingTo(mallory)
 		w := httptest.NewRecorder()
 
-		h.HandleDeleteGitHubToken(w, deleteRequest())
+		h.HandleDeleteSCMCredential(w, deleteRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
 		Expect(credentialSecrets()).To(HaveLen(1))
@@ -218,7 +218,7 @@ var _ = Describe("DELETE /api/v1/auth/github-token", func() {
 		h := failingToResolve(errors.New("token rejected by the API server"))
 		w := httptest.NewRecorder()
 
-		h.HandleDeleteGitHubToken(w, deleteRequest())
+		h.HandleDeleteSCMCredential(w, deleteRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
 		Expect(credentialSecrets()).To(HaveLen(1))
@@ -247,6 +247,6 @@ func failingToResolve(cause error) *Handlers {
 func saveTokenRequest(pat string) *http.Request {
 	body, err := json.Marshal(map[string]string{"pat": pat})
 	Expect(err).NotTo(HaveOccurred())
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/github-token", bytes.NewBuffer(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/scm/github/credential", bytes.NewBuffer(body))
 	return authenticate(req)
 }

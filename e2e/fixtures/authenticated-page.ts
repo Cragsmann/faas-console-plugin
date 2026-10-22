@@ -3,13 +3,13 @@ import { FAKE_GH_PAT } from '../helpers/constants';
 import { getCSRFToken } from '../helpers/cluster';
 import { PROXY_BASE } from '../../src/common/types';
 
-const TOKEN_URL = `${PROXY_BASE}/api/v1/auth/github-token`;
+const CREDENTIAL_URL = `${PROXY_BASE}/api/v1/scm/github/credential`;
 
 // Handing the backend the PAT is the whole setup. The credential is keyed by
 // the OpenShift identity the console forwards, so the browser needs nothing
 // seeded into it: every page load, including a reload, reconnects on its own.
 async function connect(page: Page): Promise<void> {
-  const res = await page.request.post(TOKEN_URL, {
+  const res = await page.request.post(CREDENTIAL_URL, {
     headers: { 'X-CSRFToken': await csrfToken(page) },
     data: { pat: FAKE_GH_PAT },
   });
@@ -28,7 +28,7 @@ async function csrfToken(page: Page): Promise<string> {
 
 async function disconnect(page: Page): Promise<void> {
   try {
-    await page.request.delete(TOKEN_URL, {
+    await page.request.delete(CREDENTIAL_URL, {
       headers: { 'X-CSRFToken': await getCSRFToken(page) },
     });
   } catch (err) {

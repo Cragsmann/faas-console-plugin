@@ -19,7 +19,7 @@ vi.mock('../clients/httpClient', () => ({
   customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
-const TOKEN_URL = `${BACKEND_API}/api/v1/auth/github-token`;
+const CREDENTIAL_URL = `${BACKEND_API}/api/v1/scm/github/credential`;
 
 const testUser = { name: 'twoGiants', avatarUrl: '' };
 
@@ -179,7 +179,7 @@ describe('UserAvatar', () => {
       const user = userEvent.setup();
       let sentBody: { pat?: string } = {};
       server.use(
-        http.post(TOKEN_URL, async ({ request }) => {
+        http.post(CREDENTIAL_URL, async ({ request }) => {
           sentBody = (await request.json()) as { pat?: string };
           return HttpResponse.json({ login: 'twoGiants', avatarUrl: '' });
         }),
@@ -254,7 +254,7 @@ describe('UserAvatar', () => {
     it('disables Cancel button while validating', async () => {
       const user = userEvent.setup();
       server.use(
-        http.post(TOKEN_URL, async () => {
+        http.post(CREDENTIAL_URL, async () => {
           await delay('infinite');
           return HttpResponse.json({ login: 'twoGiants', avatarUrl: '' });
         }),

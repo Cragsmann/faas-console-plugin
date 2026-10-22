@@ -3,7 +3,7 @@ import { AuthUser, PROXY_BASE } from '../types';
 
 export { customFetch, customFetchJSON } from './httpClient';
 
-const GITHUB_TOKEN_URL = `${PROXY_BASE}/api/v1/auth/github-token`;
+const CREDENTIAL_URL = `${PROXY_BASE}/api/v1/scm/github/credential`;
 
 interface AccountResponse {
   login: string;
@@ -11,7 +11,7 @@ interface AccountResponse {
 }
 
 export async function connectGithubUser(pat: string): Promise<AuthUser> {
-  const account = await customFetchJSON<AccountResponse>(GITHUB_TOKEN_URL, 'POST', {
+  const account = await customFetchJSON<AccountResponse>(CREDENTIAL_URL, 'POST', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pat }),
   });
@@ -22,7 +22,7 @@ export async function connectGithubUser(pat: string): Promise<AuthUser> {
 // signal to ask for a PAT.
 export async function fetchGithubUser(): Promise<AuthUser | null> {
   try {
-    const account = await customFetchJSON<AccountResponse>(GITHUB_TOKEN_URL);
+    const account = await customFetchJSON<AccountResponse>(CREDENTIAL_URL);
     return toUser(account);
   } catch (err) {
     if (statusOf(err) !== 404) throw err;
@@ -32,7 +32,7 @@ export async function fetchGithubUser(): Promise<AuthUser | null> {
 
 export async function disconnectGithubUser(): Promise<void> {
   try {
-    await customFetch(GITHUB_TOKEN_URL, { method: 'DELETE' });
+    await customFetch(CREDENTIAL_URL, { method: 'DELETE' });
   } catch {
     // Best effort: the stored credential expires on its own, and leaving the
     // caller looking connected because revocation failed is the worse outcome.

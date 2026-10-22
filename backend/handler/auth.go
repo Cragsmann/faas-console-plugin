@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 )
 
-func (h *Handlers) HandleSaveGitHubToken(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleSaveSCMCredential(w http.ResponseWriter, r *http.Request) {
 	// Gate before anything else: the PAT below is sent to the SCM provider,
 	// and an unauthenticated caller must not be able to make the backend do
 	// that for them.
@@ -69,7 +69,9 @@ func (h *Handlers) HandleSaveGitHubToken(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, githubAccount(user.Login, user.AvatarURL))
 }
 
-func (h *Handlers) HandleGetGitHubUser(w http.ResponseWriter, r *http.Request) {
+// HandleGetSCMCredential answers with the credential's public representation:
+// which SCM account it belongs to, never the token itself.
+func (h *Handlers) HandleGetSCMCredential(w http.ResponseWriter, r *http.Request) {
 	ocpToken, _ := extractOCPToken(r)
 
 	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
@@ -90,7 +92,7 @@ func (h *Handlers) HandleGetGitHubUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, githubAccount(credential.Owner, credential.AvatarURL))
 }
 
-func (h *Handlers) HandleDeleteGitHubToken(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleDeleteSCMCredential(w http.ResponseWriter, r *http.Request) {
 	ocpToken, _ := extractOCPToken(r)
 
 	// Nothing to revoke if the caller cannot be identified. The browser
