@@ -197,14 +197,14 @@ describe('UserAvatar', () => {
 
     it('shows error alert when the backend rejects the PAT', async () => {
       const user = userEvent.setup();
-      connectGithubUserStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
+      connectGithubUserStub({ errorResponse: { message: 'invalid SCM token', status: 403 } });
 
       renderWithContext(<UserAvatar />);
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_bad');
       await user.click(screen.getByRole('button', { name: 'Connect' }));
 
-      expect(await screen.findByText(/invalid github pat/)).toBeInTheDocument();
+      expect(await screen.findByText(/invalid SCM token/)).toBeInTheDocument();
     });
 
     it('submits PAT when Enter is pressed in the input', async () => {
@@ -235,20 +235,20 @@ describe('UserAvatar', () => {
 
     it('clears PAT input and error on cancel', async () => {
       const user = userEvent.setup();
-      connectGithubUserStub({ errorResponse: { message: 'invalid github pat', status: 401 } });
+      connectGithubUserStub({ errorResponse: { message: 'invalid SCM token', status: 403 } });
 
       renderWithContext(<UserAvatar />);
 
       await user.type(screen.getByLabelText('Personal Access Token'), 'ghp_bad');
       await user.click(screen.getByRole('button', { name: 'Connect' }));
 
-      expect(await screen.findByText(/invalid github pat/)).toBeInTheDocument();
+      expect(await screen.findByText(/invalid SCM token/)).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: 'Cancel' }));
       await user.click(screen.getByRole('button', { name: 'Connect to GitHub' }));
 
       expect(screen.getByLabelText('Personal Access Token')).toHaveValue('');
-      expect(screen.queryByText(/invalid github pat/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/invalid SCM token/)).not.toBeInTheDocument();
     });
 
     it('disables Cancel button while validating', async () => {

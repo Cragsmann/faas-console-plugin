@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/faas-console-plugin/backend/auth/identity"
+	"github.com/openshift/faas-console-plugin/backend/identity"
 	"github.com/openshift/faas-console-plugin/backend/scm"
 )
 
@@ -35,9 +35,9 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 
 		Expect(w.Code).To(Equal(http.StatusCreated))
 
-		credential, err := h.credentials.GetCredential(context.Background(), testOCPToken)
+		credential, err := h.scmCredentials.GetCredential(context.Background(), testOCPToken)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(credential.Secret).To(Equal("ghp_valid"))
+		Expect(credential.Token).To(Equal("ghp_valid"))
 
 		_, err = storeAs(mallory).GetCredential(context.Background(), testOCPToken)
 		Expect(err).To(HaveOccurred())
@@ -63,7 +63,11 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
 
-	It("returns 401 when GitHub rejects the token", func() {
+	// Not 401: the frontend reads that one status as "the connection is
+	// gone" and disconnects, which would throw away a working session over a
+	// mistyped PAT. The SCM provider refusing a token the user just supplied
+	// is the same class of problem as it refusing a stored one.
+	It("returns 403 when the SCM provider rejects the token", func() {
 		withSCMStub(&scm.ClientStub{
 			OnGetUser: func(ctx context.Context) (*scm.User, error) { return nil, scm.ErrUnauthorized },
 		})
@@ -71,7 +75,7 @@ var _ = Describe("POST /api/v1/auth/github-token", func() {
 
 		resolvingTo(testOCPUser).HandleSaveGitHubToken(w, saveTokenRequest("ghp_bad"))
 
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
+		Expect(w.Code).To(Equal(http.StatusForbidden))
 		// A token GitHub refuses is never written, so the caller keeps whatever
 		// they already had rather than losing it to a typo.
 		Expect(credentialSecrets()).To(HaveLen(1))

@@ -53,7 +53,7 @@ type funcYamlFields struct {
 func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
 	ocpToken, _ := extractOCPToken(r)
 
-	credential, err := h.credentials.GetCredential(r.Context(), ocpToken)
+	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
 	if err != nil {
 		writeAuthError(w, err)
 		return
@@ -81,7 +81,7 @@ func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		repoFunctions, repoErr = h.listRepoFunctions(r.Context(), credential.Secret, ocpToken, namespace)
+		repoFunctions, repoErr = h.listRepoFunctions(r.Context(), credential.Token, ocpToken, namespace)
 	}()
 	go func() {
 		defer wg.Done()

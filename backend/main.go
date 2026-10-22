@@ -12,16 +12,13 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"time"
 
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-
-	"github.com/openshift/faas-console-plugin/backend/auth"
-	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/handler"
+	"github.com/openshift/faas-console-plugin/backend/identity"
+	"github.com/openshift/faas-console-plugin/backend/kube"
 	"github.com/openshift/faas-console-plugin/backend/scm"
+	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 	"github.com/openshift/faas-console-plugin/backend/scm/github"
 	"github.com/openshift/faas-console-plugin/backend/tlsreload"
 )
@@ -73,28 +70,24 @@ func main() {
 		}
 	}
 
-	// A non-empty --kube-host means the backend runs outside the cluster.
-	cfg, err := credentialRESTConfig(*kubeHost != "")
+	cfg, err := kube.ComponentConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	namespace := os.Getenv("POD_NAMESPACE")
-	if namespace == "" {
-		namespace = defaultConsolePluginNamespace
-	}
+	namespace := kube.Namespace(defaultConsolePluginNamespace)
 	caCert, err := readCACert(*caPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	credentials, err := auth.NewStore(cfg, namespace, identity.NewResolver(*kubeHost, caCert))
+	scmCredentials, err := credentials.NewStore(cfg, namespace, identity.NewResolver(*kubeHost, caCert))
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("Storing SCM credentials as Secrets in namespace %q", namespace)
 
-	h := handler.New(caCert, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, credentials)
+	h := handler.New(caCert, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, scmCredentials)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
@@ -156,29 +149,6 @@ func readCACert(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read CA certificate %q: %w", path, err)
 	}
 	return caCert, nil
-}
-
-// credentialRESTConfig builds the client config the credential store talks to
-// the cluster with. Outside the pod there is no ServiceAccount token to read,
-// so a kubeconfig stands in for it; both point at a real cluster.
-func credentialRESTConfig(outOfCluster bool) (*rest.Config, error) {
-	var cfg *rest.Config
-	var err error
-	if outOfCluster {
-		rules := clientcmd.NewDefaultClientConfigLoadingRules()
-		cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{}).ClientConfig()
-		if err != nil {
-			return nil, fmt.Errorf("load kubeconfig: %w", err)
-		}
-	} else {
-		cfg, err = rest.InClusterConfig()
-		if err != nil {
-			return nil, fmt.Errorf("load in-cluster config: %w", err)
-		}
-	}
-	cfg.ContentConfig = rest.ContentConfig{ContentType: "application/json"}
-	cfg.Timeout = 30 * time.Second
-	return cfg, nil
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
