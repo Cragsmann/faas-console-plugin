@@ -91,9 +91,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
-	mux.HandleFunc("POST /api/v1/auth/github-token", h.HandleSaveGitHubToken)
-	mux.HandleFunc("GET /api/v1/auth/github-token", h.HandleGetGitHubUser)
-	mux.HandleFunc("DELETE /api/v1/auth/github-token", h.HandleDeleteGitHubToken)
+	mux.HandleFunc("POST /api/v1/scm/github/credential", h.HandleSaveSCMCredential)
+	mux.HandleFunc("GET /api/v1/scm/github/credential", h.HandleGetSCMCredential)
+	mux.HandleFunc("DELETE /api/v1/scm/github/credential", h.HandleDeleteSCMCredential)
 	mux.HandleFunc("GET /api/v1/func/list", h.HandleListFunctions)
 	mux.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
 	mux.HandleFunc("PUT /api/v1/func/{owner}/{name}/files", h.HandlePutFiles)

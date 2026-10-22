@@ -61,7 +61,7 @@ Shared test infrastructure lives in `src/common/testing/`:
 | ------ | --------- |
 | `sdkTestDoubles.tsx` | Stubs for the OCP SDK and `httpClient`: `customFetchStub` and `customFetchJSONStub` (bridge `httpClient` to real `fetch` so MSW can intercept), `useK8sWatchResourceStub`, `useActiveNamespaceStub`, fixture builders (`ksvcFixture`, `deploymentFixture`) |
 | `functionsClientStub.ts` | MSW handlers for the backend API (`listFunctionsStub`, `getFilesStub`, `putFilesStub`, `receiveWorkflowRunEventsStub`), with configurable responses, errors, and delays |
-| `authClientStub.ts` | MSW handlers for the auth endpoints (`connectStub`, `connectionStub`, `noConnectionStub`, `disconnectStub`) |
+| `authClientStub.ts` | MSW handlers for `/api/v1/scm/github/credential` (`connectGithubUserStub`, `fetchGithubUserStub`, `noGithubUserStub`, `disconnectGithubUserStub`) |
 | `testData.ts` | Test data factories for shared test fixtures (`functionMetadata`) |
 | `mswServer.ts` | The MSW server. It provides an empty workflow event stream by default and rejects other unhandled requests |
 | `timerFake.ts` | Disposable fake timer wrapper with `advance()` for controlled time progression |
@@ -401,7 +401,7 @@ test.describe('My feature', () => {
 
 ### E2E Test Doubles
 
-Tests import `test` and `expect` from `e2e/fixtures/authenticated-page.ts`, not from `@playwright/test` directly. Before each test the fixture posts the fake PAT to `/api/v1/auth/github-token`, which leaves the credential in a Secret on the cluster, and sends a DELETE afterwards so the Secret does not outlive the test. Nothing is seeded into the browser: the credential is keyed by the OpenShift identity the console forwards, so every page load reconnects on its own, which is what makes a reload mid-test a real assertion rather than a fixture trick.
+Tests import `test` and `expect` from `e2e/fixtures/authenticated-page.ts`, not from `@playwright/test` directly. Before each test the fixture posts the fake PAT to `/api/v1/scm/github/credential`, which leaves the credential in a Secret on the cluster, and sends a DELETE afterwards so the Secret does not outlive the test. Nothing is seeded into the browser: the credential is keyed by the OpenShift identity the console forwards, so every page load reconnects on its own, which is what makes a reload mid-test a real assertion rather than a fixture trick.
 
 The fake GitHub server (`e2e/helpers/fakegithub.ts`) provides helpers for seeding, resetting, and deleting repos, reading a repo Actions variable (`getRepoVariable`), and building the standard Node function seed files (`nodeFunctionFiles`). Shared constants live in `e2e/helpers/constants.ts`:
 

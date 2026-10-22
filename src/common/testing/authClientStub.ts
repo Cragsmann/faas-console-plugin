@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 import { BACKEND_API } from './constants';
 import { server } from './mswServer';
 
-const TOKEN_URL = `${BACKEND_API}/api/v1/auth/github-token`;
+const CREDENTIAL_URL = `${BACKEND_API}/api/v1/scm/github/credential`;
 
 export const CONNECTED_ACCOUNT = { login: 'twoGiants', avatarUrl: 'https://valid.url' };
 
@@ -14,7 +14,7 @@ export function connectGithubUserStub({
   response = CONNECTED_ACCOUNT,
   errorResponse,
 }: { response?: Account; errorResponse?: ErrorResponse } = {}) {
-  server.use(http.post(TOKEN_URL, () => reply(response, errorResponse)));
+  server.use(http.post(CREDENTIAL_URL, () => reply(response, errorResponse)));
 }
 
 // connectionStub answers the GET the UI makes on mount. Omit the response to
@@ -24,7 +24,7 @@ export function fetchGithubUserStub({
   errorResponse,
 }: { response?: Account | null; errorResponse?: ErrorResponse } = {}) {
   server.use(
-    http.get(TOKEN_URL, () => {
+    http.get(CREDENTIAL_URL, () => {
       if (!response && !errorResponse) {
         return HttpResponse.json({ message: 'no stored credential' }, { status: 404 });
       }
@@ -43,7 +43,7 @@ export function disconnectGithubUserStub({
   errorResponse,
 }: { errorResponse?: ErrorResponse } = {}) {
   server.use(
-    http.delete(TOKEN_URL, () => {
+    http.delete(CREDENTIAL_URL, () => {
       if (errorResponse) {
         return HttpResponse.json(
           { message: errorResponse.message },
