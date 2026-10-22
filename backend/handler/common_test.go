@@ -7,12 +7,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	"github.com/openshift/faas-console-plugin/backend/auth"
-	"github.com/openshift/faas-console-plugin/backend/auth/identity"
 	"github.com/openshift/faas-console-plugin/backend/cluster"
 	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/functions"
+	"github.com/openshift/faas-console-plugin/backend/identity"
 	"github.com/openshift/faas-console-plugin/backend/scm"
+	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -45,7 +45,7 @@ func credentialSecrets() []corev1.Secret {
 
 // testHandlers gives h a credential store holding testOCPUser's PAT, so
 // credential lookup takes the same path as production. The tests run against a
-// real auth.Store over a fake cluster rather than a stand-in, so the ownership
+// real credentials.Store over a fake cluster rather than a stand-in, so the ownership
 // and expiry rules they exercise are the ones that ship. Pass the struct by
 // value: callers set only the fields they care about and never have to
 // remember the rest.
@@ -61,27 +61,27 @@ func testHandlersResolving(h Handlers, resolver identity.Resolver) *Handlers {
 	// A cluster of its own per call, so one spec revoking a credential cannot
 	// change what the next one sees.
 	credentialCluster = fake.NewClientset()
-	seed := auth.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
+	seed := credentials.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
 		OnResolve: func(context.Context, string) (identity.User, error) { return testOCPUser, nil },
 	})
-	err := seed.SaveCredential(context.Background(), testOCPToken, auth.Credential{
-		Owner:  "tester",
-		Secret: "test-pat",
-		Type:   auth.CredentialTypePAT,
+	err := seed.SaveCredential(context.Background(), testOCPToken, credentials.Credential{
+		Owner: "tester",
+		Token: "test-pat",
+		Type:  credentials.CredentialTypePAT,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("seed test credential: %v", err))
 	}
 
-	h.credentials = auth.NewStoreWithClient(credentialCluster, testNamespace, resolver)
+	h.scmCredentials = credentials.NewStoreWithClient(credentialCluster, testNamespace, resolver)
 	return &h
 }
 
 // storeAs reads the same fake cluster as the handlers under test, but resolves
 // every token to user. It is how a spec checks a credential is not reachable
 // by somebody else.
-func storeAs(user identity.User) *auth.Store {
-	return auth.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
+func storeAs(user identity.User) *credentials.Store {
+	return credentials.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
 		OnResolve: func(context.Context, string) (identity.User, error) { return user, nil },
 	})
 }

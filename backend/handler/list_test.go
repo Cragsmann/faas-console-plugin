@@ -285,7 +285,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		withFunctionsClientError(errors.New("cannot reach cluster"))
 
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleListFunctions(w, listRequest())
+		(testHandlers(Handlers{})).HandleListFunctions(w, listRequest())
 
 		Expect(w.Code).To(Equal(http.StatusBadGateway))
 	})
@@ -539,7 +539,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		})
 
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleListFunctions(w, scopedListRequest("?namespace=demo"))
+		(testHandlers(Handlers{})).HandleListFunctions(w, scopedListRequest("?namespace=demo"))
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var items []listItem
@@ -633,7 +633,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		})
 
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleListFunctions(w, listRequest())
+		(testHandlers(Handlers{})).HandleListFunctions(w, listRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var items []listItem
@@ -663,7 +663,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		})
 
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleListFunctions(w, listRequest())
+		(testHandlers(Handlers{})).HandleListFunctions(w, listRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var items []listItem
@@ -692,7 +692,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		})
 
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleListFunctions(w, listRequest())
+		(testHandlers(Handlers{})).HandleListFunctions(w, listRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var items []listItem
@@ -720,7 +720,7 @@ var _ = Describe("GET /api/v1/func/list", func() {
 		})
 
 		w := httptest.NewRecorder()
-		(&Handlers{}).HandleListFunctions(w, listRequest())
+		(testHandlers(Handlers{})).HandleListFunctions(w, listRequest())
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		var items []listItem

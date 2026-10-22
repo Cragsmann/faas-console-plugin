@@ -140,10 +140,10 @@ backend_gh_flag() {
 }
 
 ensure_session_namespace() {
-  # The backend puts session Secrets in the namespace the chart installs into,
-  # reading POD_NAMESPACE in the pod and hardcoding the same name on a laptop,
-  # where there is no pod to ask. It is not configurable from here. Dev does not
-  # require the plugin to have ever been deployed to this cluster, so create it.
+  # The backend puts SCM credential Secrets in the namespace it runs in, which
+  # it reads from its ServiceAccount in the pod and falls back to this name off
+  # cluster, where there is no pod to ask. It is not configurable from here.
+  # Dev does not require the plugin to have ever been deployed here, so create it.
   local ns="console-functions-plugin"
   oc get namespace "$ns" &>/dev/null 2>&1 || oc create namespace "$ns"
   log::info "Session Secrets go to namespace $ns"

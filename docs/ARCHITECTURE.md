@@ -116,8 +116,8 @@ Go + `net/http` standard library. Key dependencies:
 | `handler` | HTTP handlers: input validation, orchestration, error mapping |
 | `scm` | SCM abstraction types (`Platform`, `Registry`, `Client`) and filesystem helpers |
 | `scm/github` | go-github implementation of `scm.Client` |
-| `auth` | Session credentials (GitHub PAT today, OAuth later) stored as Secrets in the backend's own namespace, each bound to the `identity.User` that created it |
-| `auth/identity` | Who the caller is: turns the console-forwarded user token into an `identity.User` (username + UID) via `SelfSubjectReview`, with a short-lived cache |
+| `scm/credentials` | SCM tokens (GitHub PAT today, OAuth later) stored as Secrets in the backend's own namespace, each bound to the `identity.User` that created it |
+| `identity` | Who the caller is: turns the console-forwarded user token into an `identity.User` (username + UID) via `SelfSubjectReview`, with a short-lived cache |
 | `config` | Runtime configuration, package-level wiring vars (`SCMRegistry`), constants, and service account token expiry parsing |
 | `tlsreload` | Reloads the serving cert/key from disk on change (fsnotify plus a poll fallback), swapping an atomic `*tls.Certificate` via `GetCertificate` so rotated certs are served without a restart |
 
@@ -130,9 +130,9 @@ Go + `net/http` standard library. Key dependencies:
 - `scm` has no knowledge of cluster or functions
 - `functions` imports `scm` only for `scm.Platform` and `scm.FileEntry` types
 - `config` is imported by `handler`, `functions`, and `main` only; it owns runtime configuration and package-level wiring
-- `auth/identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend. Only `auth` depends on it; `handler` does not, which is the point of the next bullet
-- `auth` imports `auth/identity` because a stored credential is meaningless without the user it belongs to, and it owns the `identity.Resolver`. `handler` hands `auth` the raw bearer token and gets a credential back, so it never holds an `identity.User` and never mediates between the two. It is a subpackage rather than part of `auth` itself so that "which OpenShift user is this?" stays answerable without dragging in credential storage
-- `auth` knows nothing about `scm`, `cluster`, or HTTP. The handlers that store and read the credential live in `handler` (as `handler/auth.go`, alongside the request-scoped plumbing: `currentUser`, `credentialFor`, `writeAuthError`), which is what keeps `auth` free of the SCM dependency it would otherwise need to verify a PAT
+- `identity` is a leaf next to `kube`: it imports `kube` and nothing else from the backend. It is about OpenShift identity, not SCM, so it sits at the top level rather than under the package that happens to use it most
+- `scm/credentials` imports `identity` because a stored token is meaningless without the user it belongs to, and it owns the `identity.Resolver`. `handler` hands it the raw bearer token and gets a credential back, so it never holds an `identity.User` and never mediates between the two. `handler` imports `identity` only for `ErrUnauthenticated`, which is an OpenShift concept and does not belong behind an SCM package
+- `scm/credentials` sits under `scm` because that is what it stores tokens for, but it imports neither `scm` nor `cluster` nor anything HTTP. The handlers that store and read the token live in `handler`, which is what keeps it free of the SCM dependency it would otherwise need to verify a PAT. Callers name it `scmCredentials` rather than `credentials`, so the variable never reads as cluster credentials
 
 ### Key Decisions
 
@@ -181,7 +181,7 @@ The credential is one resource with three verbs:
 - `GET /api/v1/auth/github-token` answers 200 with the connected account, or **404** when the user has nothing stored. Not 401: the frontend reads 404 as "ask for a PAT" and 401 as an authentication failure, and conflating them would prompt on a backend blip. A 503 says the store could not be read, which is not the same as there being nothing in it.
 - `DELETE /api/v1/auth/github-token` is keyed on the OpenShift user. A leaked anything must not be a way to revoke somebody else's connection, and the browser disconnects regardless of whether the call succeeds. The backend Role needs `update` on secrets alongside `create`, `get`, and `delete`, because reconnecting overwrites the Secret in place.
 
-`writeAuthError` is the only source of 401 on the request path, which is what lets the frontend read that one status as "connect to GitHub": either the OpenShift identity could not be established, or the store holds no credential for it. An SCM provider rejecting the **stored** credential is a **403** instead, because re-asking cannot repair it and replaying a create or a save would run it twice.
+`writeAuthError` is the only source of 401, which is what lets the frontend read that one status as "connect to GitHub": either the OpenShift identity could not be established, or the store holds no credential for it. That has to hold everywhere, because `customFetch` turns any 401 into `AUTH_EXPIRED_EVENT` and disconnects. An SCM provider rejecting a token is a **403**, whether the token was stored earlier or supplied on the request being served: re-asking for the OpenShift identity cannot repair either, and answering 401 for a mistyped PAT would throw away a working connection.
 
 The frontend holds no auth state of its own. `AuthProvider` calls `GET /api/v1/auth/github-token` on mount and reports `isResolving` until it answers; a user whose PAT is already stored is connected having typed nothing. Consumers must distinguish `isResolving` from "not connected" or they flash a disconnected empty state, and `UserAvatar` would prompt for a credential the backend already holds, which is why the PAT modal opens only once that first answer says there is nothing stored. `authFetch` does not retry: a 401 fires `AUTH_LOST_EVENT`, `AuthProvider` clears its state, and `connectionId` bumps so consumers discard cached data.
 

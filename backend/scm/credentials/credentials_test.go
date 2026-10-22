@@ -1,4 +1,4 @@
-package auth
+package credentials
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/faas-console-plugin/backend/auth/identity"
+	"github.com/openshift/faas-console-plugin/backend/identity"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +47,7 @@ func tokenResolver() identity.Resolver {
 	}
 }
 
-var alicePAT = Credential{Owner: "alice-gh", AvatarURL: "https://avatars/alice", Secret: "ghp_secret", Type: CredentialTypePAT}
+var alicePAT = Credential{Owner: "alice-gh", AvatarURL: "https://avatars/alice", Token: "ghp_secret", Type: CredentialTypePAT}
 
 var _ = Describe("Store", func() {
 	var (
@@ -78,7 +78,7 @@ var _ = Describe("Store", func() {
 		// honest. They exist so that whoever reads a Secret can tell what it
 		// holds and whose account it is without trying it.
 		It("records the credential type and owner", func() {
-			oauth := Credential{Owner: "alice-gh", Secret: "gho_secret", Type: CredentialTypeOAuth}
+			oauth := Credential{Owner: "alice-gh", Token: "gho_secret", Type: CredentialTypeOAuth}
 			Expect(store.SaveCredential(ctx, aliceToken, oauth)).To(Succeed())
 
 			data := readSecretData(store, alice)
@@ -90,11 +90,11 @@ var _ = Describe("Store", func() {
 		// Without a user to bind to there is nothing to key the Secret by, so
 		// a token the cluster will not identify must not store anything.
 		It("refuses a token the cluster does not recognise", func() {
-			Expect(store.SaveCredential(ctx, "not-a-token", alicePAT)).To(MatchError(ErrUnauthenticated))
+			Expect(store.SaveCredential(ctx, "not-a-token", alicePAT)).To(MatchError(identity.ErrUnauthenticated))
 		})
 
 		It("refuses a request carrying no token at all", func() {
-			Expect(store.SaveCredential(ctx, "", alicePAT)).To(MatchError(ErrUnauthenticated))
+			Expect(store.SaveCredential(ctx, "", alicePAT)).To(MatchError(identity.ErrUnauthenticated))
 		})
 
 		// Reconnecting must not orphan the previous Secret: it would still hold
@@ -102,7 +102,7 @@ var _ = Describe("Store", func() {
 		It("replaces an existing credential rather than adding another", func() {
 			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
 
-			rotated := Credential{Owner: "alice-gh", Secret: "ghp_rotated", Type: CredentialTypePAT}
+			rotated := Credential{Owner: "alice-gh", Token: "ghp_rotated", Type: CredentialTypePAT}
 			Expect(store.SaveCredential(ctx, aliceToken, rotated)).To(Succeed())
 
 			secrets, err := store.client.CoreV1().Secrets(testNamespace).List(ctx, metav1.ListOptions{})
@@ -111,7 +111,7 @@ var _ = Describe("Store", func() {
 
 			credential, err := store.GetCredential(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(credential.Secret).To(Equal("ghp_rotated"))
+			Expect(credential.Token).To(Equal("ghp_rotated"))
 		})
 	})
 
@@ -121,7 +121,7 @@ var _ = Describe("Store", func() {
 
 			credential, err := store.GetCredential(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(credential.Secret).To(Equal("ghp_secret"))
+			Expect(credential.Token).To(Equal("ghp_secret"))
 		})
 
 		// The caller has to be able to tell a PAT from an OAuth token without

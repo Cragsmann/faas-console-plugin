@@ -47,12 +47,6 @@ spec:
             - "--sa-token-expiry={{ .Values.plugin.saTokenExpiry }}"
             {{- end }}
           env:
-            # The backend stores session credentials as Secrets in its own
-            # namespace, the only one its Role covers.
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
             {{- if .Values.plugin.funcCliVersion }}
             - name: FUNC_CLI_VERSION
               value: {{ .Values.plugin.funcCliVersion | quote }}

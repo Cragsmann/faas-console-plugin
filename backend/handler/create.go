@@ -63,13 +63,13 @@ func (h *Handlers) HandleFuncCreate(w http.ResponseWriter, r *http.Request) {
 
 	ocpToken, _ := extractOCPToken(r)
 
-	credential, err := h.credentials.GetCredential(r.Context(), ocpToken)
+	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
 	if err != nil {
 		writeAuthError(w, err)
 		return
 	}
 
-	if err := h.createFunction(r.Context(), req, credential.Secret, ocpToken); err != nil {
+	if err := h.createFunction(r.Context(), req, credential.Token, ocpToken); err != nil {
 		switch {
 		case errors.Is(err, scm.ErrUnauthorized):
 			writeError(w, http.StatusForbidden, "invalid SCM token")

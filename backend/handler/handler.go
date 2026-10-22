@@ -2,18 +2,21 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
-	"github.com/openshift/faas-console-plugin/backend/auth"
+	"github.com/openshift/faas-console-plugin/backend/identity"
+	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 )
 
 type Handlers struct {
-	caCert               []byte      // cluster CA certificate, read once at startup
-	kubeHost             string      // API server URL for dev/test; empty uses in-cluster config
-	externalAPIServerURL string      // external URL embedded in generated kubeconfigs
-	saTokenExpiry        int64       // requested SA token lifetime in seconds
-	credentials          *auth.Store // SCM credentials, resolved from the console's bearer token
+	caCert               []byte             // cluster CA certificate, read once at startup
+	kubeHost             string             // API server URL for dev/test; empty uses in-cluster config
+	externalAPIServerURL string             // external URL embedded in generated kubeconfigs
+	saTokenExpiry        int64              // requested SA token lifetime in seconds
+	scmCredentials       *credentials.Store // SCM credentials, resolved from the console's bearer token
 }
 
 type httpError struct {
@@ -34,13 +37,36 @@ func newHTTPError(code int, message string, cause error) error {
 	return &httpError{code: code, message: message, cause: cause}
 }
 
-func New(caCert []byte, kubeHost, externalAPIServerURL string, saTokenExpiry int64, credentials *auth.Store) *Handlers {
+func New(caCert []byte, kubeHost, externalAPIServerURL string, saTokenExpiry int64, scmCredentials *credentials.Store) *Handlers {
 	return &Handlers{
 		caCert:               caCert,
 		kubeHost:             kubeHost,
 		externalAPIServerURL: externalAPIServerURL,
 		saTokenExpiry:        saTokenExpiry,
-		credentials:          credentials,
+		scmCredentials:       scmCredentials,
+	}
+}
+
+func extractOCPToken(r *http.Request) (string, bool) {
+	header := r.Header.Get("Authorization")
+	if !strings.HasPrefix(header, "Bearer ") {
+		return "", false
+	}
+	token := strings.TrimPrefix(header, "Bearer ")
+	return token, token != ""
+}
+
+// writeAuthError is the only source of 401 on the request path, which is what
+// lets the frontend read that one status as "connect to GitHub".
+func writeAuthError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, identity.ErrUnauthenticated),
+		errors.Is(err, credentials.ErrNoCredential):
+		slog.Warn("rejecting request without a usable credential", "err", err)
+		writeError(w, http.StatusUnauthorized, "authentication required")
+	default:
+		slog.Error("could not resolve the caller's credential", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "credential store unavailable")
 	}
 }
 

@@ -3,7 +3,7 @@
 // forwarded and get a credential back; resolving that token to a user, and
 // keying the Secret by it, is this package's own business. The credential
 // itself never leaves the backend.
-package auth
+package credentials
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/openshift/faas-console-plugin/backend/auth/identity"
+	"github.com/openshift/faas-console-plugin/backend/identity"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,15 +33,10 @@ const (
 
 var ErrNoCredential = errors.New("no stored credential for user")
 
-// ErrUnauthenticated is re-exported so callers can tell "the cluster would not
-// say who this is" from "this caller has nothing stored" without reaching into
-// the identity subpackage.
-var ErrUnauthenticated = identity.ErrUnauthenticated
-
 type Credential struct {
 	Owner     string // SCM username
 	AvatarURL string
-	Secret    string // the PAT or OAuth token itself
+	Token     string // the PAT or OAuth token itself
 	Type      string // CredentialTypePAT or CredentialTypeOAuth
 }
 
@@ -68,20 +63,17 @@ func NewStore(cfg *rest.Config, namespace string, resolver identity.Resolver) (*
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes client: %w", err)
 	}
-	return &Store{client: client, namespace: namespace, resolver: resolver}, nil
+	return NewStoreWithClient(client, namespace, resolver), nil
 }
 
 func NewStoreWithClient(client kubernetes.Interface, namespace string, resolver identity.Resolver) *Store {
 	return &Store{client: client, namespace: namespace, resolver: resolver}
 }
 
-// userFor turns the console's bearer token into the user it belongs to. Every
-// public method starts here, so a caller can never reach a credential without
-// having proved whose it is.
-func (s *Store) userFor(ctx context.Context, ocpToken string) (identity.User, error) {
-	if ocpToken == "" {
-		return identity.User{}, fmt.Errorf("%w: no OpenShift user token", identity.ErrUnauthenticated)
-	}
+// resolveUser turns the console's bearer token into the user it belongs to.
+// Every public method starts here, so a caller can never reach a credential
+// without having proved whose it is.
+func (s *Store) resolveUser(ctx context.Context, ocpToken string) (identity.User, error) {
 	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
 		return identity.User{}, fmt.Errorf("resolve OpenShift user: %w", err)
@@ -90,16 +82,12 @@ func (s *Store) userFor(ctx context.Context, ocpToken string) (identity.User, er
 }
 
 func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Credential) error {
-	user, err := s.userFor(ctx, ocpToken)
+	user, err := s.resolveUser(ctx, ocpToken)
 	if err != nil {
 		return err
 	}
-	if user.Username == "" {
-		return fmt.Errorf("storing a credential requires an OpenShift user")
-	}
-
 	return s.write(ctx, user, secretData{
-		Credential: cred.Secret,
+		Credential: cred.Token,
 		Type:       cred.Type,
 		Owner:      cred.Owner,
 		AvatarURL:  cred.AvatarURL,
@@ -109,7 +97,7 @@ func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Creden
 }
 
 func (s *Store) GetCredential(ctx context.Context, ocpToken string) (Credential, error) {
-	user, err := s.userFor(ctx, ocpToken)
+	user, err := s.resolveUser(ctx, ocpToken)
 	if err != nil {
 		return Credential{}, err
 	}
@@ -125,13 +113,13 @@ func (s *Store) GetCredential(ctx context.Context, ocpToken string) (Credential,
 	return Credential{
 		Owner:     data.Owner,
 		AvatarURL: data.AvatarURL,
-		Secret:    data.Credential,
+		Token:     data.Credential,
 		Type:      data.Type,
 	}, nil
 }
 
 func (s *Store) DeleteCredential(ctx context.Context, ocpToken string) error {
-	user, err := s.userFor(ctx, ocpToken)
+	user, err := s.resolveUser(ctx, ocpToken)
 	if err != nil {
 		return err
 	}

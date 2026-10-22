@@ -68,7 +68,7 @@ func (r *reviewResolver) ResolveUserIdentity(ctx context.Context, token string) 
 		return user, nil
 	}
 
-	cfg, err := kube.RESTConfig(r.host, token, r.caCert)
+	cfg, err := kube.UserConfig(r.host, token, r.caCert)
 	if err != nil {
 		return User{}, fmt.Errorf("build rest config: %w", err)
 	}
@@ -136,6 +136,12 @@ type ResolverStub struct {
 }
 
 func (s *ResolverStub) ResolveUserIdentity(ctx context.Context, token string) (User, error) {
+	// The real resolver refuses an empty token before it reaches the API
+	// server. A stub that answered one would let callers pass tests they
+	// would fail in production.
+	if token == "" {
+		return User{}, fmt.Errorf("%w: no bearer token", ErrUnauthenticated)
+	}
 	if s.OnResolve != nil {
 		return s.OnResolve(ctx, token)
 	}
