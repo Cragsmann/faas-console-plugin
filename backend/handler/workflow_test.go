@@ -201,8 +201,9 @@ var _ = Describe("WorkflowRunWatch", func() {
 			},
 		}))
 
-		// Closing the channel signals the watch ended (e.g. the token was revoked
-		// mid-stream); the handler ends the SSE stream, so the body reaches EOF.
+		// Closing the watch signals the stream ended (e.g. the token was revoked
+		// mid-stream); the handler closes the SSE stream, the body reaches EOF,
+		// and receiveWTO returns without timing out, proving the stream closed.
 		tw.Stop()
 		receiveWTO(events)
 	})
