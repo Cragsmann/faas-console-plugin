@@ -11,30 +11,72 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/openshift/faas-console-plugin/backend/scm"
+	"github.com/openshift/faas-console-plugin/backend/scm/github/httpcache"
+	"github.com/openshift/faas-console-plugin/backend/ticker"
 )
 
+type Option func(*ghClient)
+
+// WithWatchTickerFactories sets the factories for poll and rediscover tickers
+// in the WatchWorkflowRuns loop. Both must be non-nil.
+func WithWatchTickerFactories(poll, rediscover ticker.Factory) Option {
+	if poll == nil {
+		panic("poll factory must not be nil")
+	}
+	if rediscover == nil {
+		panic("rediscover factory must not be nil")
+	}
+	return func(c *ghClient) {
+		c.pollTickerFactory = poll
+		c.rediscoverTickerFactory = rediscover
+	}
+}
+
+// New builds a client against github.com with default settings. It is not
+// variadic so it stays assignable to scm.ClientFactory, which is how the
+// registry wires it; use NewWithBaseURL to pass options.
 func New(pat string) scm.Client {
 	return NewWithBaseURL(pat, "")
 }
 
-func NewWithBaseURL(pat, baseURL string) scm.Client {
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	opts := []ghlib.ClientOptionsFunc{
+func NewWithBaseURL(pat, baseURL string, opts ...Option) scm.Client {
+	// Its own ETag cache, so responses are never served across PATs. Unchanged
+	// build status comes back as a 304, which does NOT count against the
+	// primary rate limit, so the 3s poll loop stays nearly free. See
+	// httpcache.NewETagCache.
+	httpClient := &http.Client{Transport: httpcache.NewETagCache(http.DefaultTransport), Timeout: 30 * time.Second}
+	clientOpts := []ghlib.ClientOptionsFunc{
 		ghlib.WithHTTPClient(httpClient),
 		ghlib.WithAuthToken(pat),
 	}
 	if baseURL != "" {
-		opts = append(opts, ghlib.WithURLs(&baseURL, nil))
+		clientOpts = append(clientOpts, ghlib.WithURLs(&baseURL, nil))
 	}
-	client, err := ghlib.NewClient(opts...)
+	client, err := ghlib.NewClient(clientOpts...)
 	if err != nil {
 		panic(fmt.Sprintf("github.NewWithBaseURL: invalid baseURL %q: %v", baseURL, err))
 	}
-	return &ghClient{client: client}
+	c := &ghClient{
+		client: client,
+		pollTickerFactory: func() ticker.Ticker {
+			return ticker.New(defaultWatchPollInterval)
+		},
+		rediscoverTickerFactory: func() ticker.Ticker {
+			return ticker.New(defaultWatchRediscoverInterval)
+		},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 type ghClient struct {
 	client *ghlib.Client
+	// Ticker factories for the WatchWorkflowRuns loop. Set once at construction
+	// and only read afterwards, including by the watch goroutine.
+	pollTickerFactory       ticker.Factory
+	rediscoverTickerFactory ticker.Factory
 }
 
 func mapErr(err error) error {
