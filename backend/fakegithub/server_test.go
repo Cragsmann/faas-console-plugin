@@ -314,22 +314,29 @@ var _ = Describe("FakeGitHub Server", func() {
 		It("filters by branch", func() {
 			ts, cl := startServerPlain()
 			seedRepo(ts)
+			setWorkflowRun(ts, `{"owner":"testuser","repo":"test-func","branch":"main","status":"in_progress"}`)
+			// Seeded last, so it is the most recent run and would win if the
+			// branch filter were ignored.
 			setWorkflowRun(ts, `{"owner":"testuser","repo":"test-func","branch":"other","status":"completed","conclusion":"success"}`)
 
-			run := latestRun(cl, "testuser", "test-func")
-			Expect(run).To(BeNil())
+			run := latestRun(cl, "testuser", "test-func") // queries the default branch, main
+			Expect(run).NotTo(BeNil())
+			Expect(run.GetStatus()).To(Equal("in_progress"))
 		})
 
 		It("scopes to the func workflow file, ignoring runs of other workflows", func() {
 			ts, cl := startServerPlain()
 			seedRepo(ts)
+			setWorkflowRun(ts, `{"owner":"testuser","repo":"test-func","branch":"main","status":"in_progress"}`)
+			// Same branch and more recent, so only the workflow file keeps it out.
 			setWorkflowRun(ts, `{
 				"owner":"testuser","repo":"test-func","branch":"main",
 				"status":"completed","conclusion":"success","workflow":"other.yaml"
 			}`)
 
 			run := latestRun(cl, "testuser", "test-func")
-			Expect(run).To(BeNil())
+			Expect(run).NotTo(BeNil())
+			Expect(run.GetStatus()).To(Equal("in_progress"))
 		})
 
 		It("returns a completed failed run", func() {
