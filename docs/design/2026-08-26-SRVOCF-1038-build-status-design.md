@@ -32,7 +32,7 @@ the list current as a deployment progresses.
 End to end, GitHub to table cell:
 
 ```
-GitHub Actions ──poll 3s──> scm/github/watch.go ──chan──> handler/build.go
+GitHub Actions ──poll 3s──> scm/github/workflow.go ──chan──> handler/workflow.go
                                                                │ SSE
                                                                v
 FunctionTable.tsx <── useFunctions <── functionsClient.ts <── sseEventSource.ts
@@ -43,12 +43,12 @@ FunctionTable.tsx <── useFunctions <── functionsClient.ts <── sseEve
 
 | File | Role |
 |------|------|
-| `backend/scm/client.go` | SCM interface definition: `Client.WatchWorkflowRuns` and the `WorkflowWatch` / `WorkflowRun` / `BuildStatus` types it is declared in terms of |
-| `backend/scm/github/watch.go` | The poll loop: discovery, per-repo fetch, status derivation, change-only emission |
+| `backend/scm/client.go` | SCM interface definition: `Client.WatchWorkflowRuns` and the `WorkflowWatch` / `WorkflowRun` / `WorkflowRunStatus` types it is declared in terms of |
+| `backend/scm/github/workflow.go` | The poll loop: discovery, per-repo fetch, status derivation, change-only emission |
 | `backend/scm/github/client.go` | go-github client; wires the ETag cache in as its HTTP transport |
 | `backend/scm/github/httpcache/etagcache.go` | The ETag cache: stores bodies, sends `If-None-Match`, replays on 304 |
 | `backend/functions/ci.go` | `WorkflowFilename`, the single workflow the watch is scoped to |
-| `backend/handler/build.go` | The SSE endpoint, `WorkflowRunDTO` / `ErrorDTO`, error mapping |
+| `backend/handler/workflow.go` | The SSE endpoint, `WorkflowRunDTO` / `ErrorDTO`, error mapping |
 | `backend/ticker/ticker.go` | Ticker abstraction behind an injectable factory, so tests step time instead of sleeping |
 | `backend/fakegithub/server.go` | Fake Actions API plus the `/_admin` scripting control |
 | `src/common/transport/sseEventSource.ts` | Custom SSE client implementing a subset of the native `EventSource` API, generic over event names |
@@ -64,9 +64,9 @@ the constant):
 
 | Cadence | Value | Defined in |
 |---------|-------|------------|
-| Workflow run poll | 3s | `defaultWatchPollInterval`, `scm/github/watch.go` |
-| Repo rediscovery | 30s | `defaultWatchRediscoverInterval`, `scm/github/watch.go` |
-| SSE heartbeat | 15s | `defaultHeartbeat`, `handler/build.go` |
+| Workflow run poll | 3s | `defaultWatchPollInterval`, `scm/github/workflow.go` |
+| Repo rediscovery | 30s | `defaultWatchRediscoverInterval`, `scm/github/workflow.go` |
+| SSE heartbeat | 15s | `defaultHeartbeat`, `handler/workflow.go` |
 | Client reconnect delay | 3s | `reconnectDelayMs` default, `sseEventSource.ts` |
 
 None of these is configurable at runtime: there is no flag, env var or API to
@@ -281,12 +281,12 @@ type WorkflowRunsEvent struct {
 }
 
 type WorkflowRun struct {
-    BuildStatus BuildStatus
-    HTMLURL     string
-    Error       error
+    Status  WorkflowRunStatus
+    HTMLURL string
+    Error   error
 }
 
-type BuildStatus int // None | Building | Succeeded | Failed
+type WorkflowRunStatus int // None | Building | Succeeded | Failed
 ```
 
 Design notes on these shapes:
@@ -317,7 +317,7 @@ Discovery runs synchronously so an auth failure is returned to the caller
 instead of being lost in the goroutine. `Repo.FullName()` (`owner/name`) is the
 key everything is correlated on, matching what `listFunctions` returns.
 
-### GitHub implementation (`backend/scm/github/watch.go`)
+### GitHub implementation (`backend/scm/github/workflow.go`)
 
 - Per repo, `Actions.ListWorkflowRunsByFileName(ctx, owner, repo, workflowFile,
   {Branch: defaultBranch, PerPage: 1})`. Runs come back `created_at` descending,
@@ -376,7 +376,7 @@ key everything is correlated on, matching what `listFunctions` returns.
   primary rate limit. The cache is per-client, so per-PAT, and one user's
   responses are never served to another.
 
-### Endpoint (`backend/handler/build.go`)
+### Endpoint (`backend/handler/workflow.go`)
 
 `GET /api/v1/func/build/watch` (SSE) is the only build endpoint. It is
 **parameterless and user-scoped**, mirroring `GET /api/v1/func/list`: it requires
@@ -444,7 +444,7 @@ special-cases it.
   "matejvasek/fn-testing-b": {
     "status": "Building",
     "url": "https://github.com/matejvasek/fn-testing-b/actions/runs/124",
-    "error": { "message": "Unable to fetch build status. Please try again later." }
+    "error": { "message": "Unable to fetch workflow run status. Please try again later." }
   }
 }
 ```
@@ -456,7 +456,7 @@ forward.
 The two ends of this contract are declared separately and must be kept in step:
 
 ```go
-// backend/handler/build.go
+// backend/handler/workflow.go
 type WorkflowRunDTO struct {
     Status string    `json:"status"`
     URL    string    `json:"url,omitempty"`
@@ -525,7 +525,7 @@ the frontend branches on (it stops reconnecting and prompts for a new token);
 No upstream error reaches the browser verbatim; the original is logged
 server-side with full detail. For errors raised once the watch is running there
 are exactly two user-facing strings, via `errorToMessage`: an auth-specific one,
-and a generic "Unable to fetch build status. Please try again later." for
+and a generic "Unable to fetch workflow run status. Please try again later." for
 everything else (rate limits, network failures, rediscovery errors).
 
 **Known gap:** the three pre-stream failures do not go through `errorToMessage`.

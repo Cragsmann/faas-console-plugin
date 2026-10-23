@@ -34,7 +34,7 @@ type ErrorDTO struct {
 	Code    *int   `json:"code,omitempty"`
 }
 
-// BuildWatch returns an HTTP handler that streams build status over SSE.
+// WorkflowRunWatch returns an HTTP handler that streams workflow run status over SSE.
 //
 // Request: GET with an X-SCM-Token header carrying a GitHub personal access
 // token. The options are wiring seams for tests, see WithSCMFactory and
@@ -66,7 +66,7 @@ type ErrorDTO struct {
 // ends the stream, while anything raised once the loop is running leaves it
 // open and lets the client decide whether to reconnect. Otherwise the stream
 // runs until the client disconnects or the request context is cancelled.
-func BuildWatch(opts ...WatchOption) http.HandlerFunc {
+func WorkflowRunWatch(opts ...WatchOption) http.HandlerFunc {
 	cfg := watchConfig{
 		newSCMClient: func(pat string) scm.Client {
 			return config.SCMRegistry.Client(scm.DefaultPlatform, pat)
@@ -79,11 +79,11 @@ func BuildWatch(opts ...WatchOption) http.HandlerFunc {
 		opt(&cfg)
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		handleBuildWatch(w, r, cfg.newSCMClient, cfg.heartbeatFactory)
+		handleWorkflowRunWatch(w, r, cfg.newSCMClient, cfg.heartbeatFactory)
 	}
 }
 
-func handleBuildWatch(w http.ResponseWriter, r *http.Request, newSCMClient scm.ClientFactory, heartbeatFactory ticker.Factory) {
+func handleWorkflowRunWatch(w http.ResponseWriter, r *http.Request, newSCMClient scm.ClientFactory, heartbeatFactory ticker.Factory) {
 	// SSE requires explicit flushing to stream events in real-time. Go's net/http
 	// server always implements http.Flusher, but middleware that wraps ResponseWriter
 	// without forwarding the interface can break this. If flushing is unavailable,
@@ -117,7 +117,7 @@ func handleBuildWatch(w http.ResponseWriter, r *http.Request, newSCMClient scm.C
 			ew.writeHTTPError(http.StatusUnauthorized, "invalid SCM token")
 			return
 		}
-		slog.Error("build watch: watch workflow runs failed", "err", err)
+		slog.Error("workflow run watch: watch workflow runs failed", "err", err)
 		ew.writeHTTPError(http.StatusBadGateway, "failed to list repositories")
 		return
 	}
@@ -140,16 +140,16 @@ func handleBuildWatch(w http.ResponseWriter, r *http.Request, newSCMClient scm.C
 				return
 			}
 			if event.Err != nil {
-				slog.Error("build watch: stream error", "err", event.Err)
+				slog.Error("workflow run watch: stream error", "err", event.Err)
 				if err := ew.writeError(event.Err); err != nil {
-					slog.Error("build watch: failed to write error event", "err", err)
+					slog.Error("workflow run watch: failed to write error event", "err", err)
 					return
 				}
 				flusher.Flush()
 				continue
 			}
-			if err := ew.writeBuildStatus(event.Runs); err != nil {
-				slog.Error("build watch: failed to write build event", "err", err)
+			if err := ew.writeWorkflowRunStatus(event.Runs); err != nil {
+				slog.Error("workflow run watch: failed to write workflow run event", "err", err)
 				return
 			}
 			flusher.Flush()
@@ -180,11 +180,11 @@ type eventWriter struct {
 	out  io.Writer
 }
 
-func (e *eventWriter) writeBuildStatus(runs map[string]scm.WorkflowRun) error {
+func (e *eventWriter) writeWorkflowRunStatus(runs map[string]scm.WorkflowRun) error {
 	var runsDTO = make(map[string]WorkflowRunDTO, len(runs))
 	for k, v := range runs {
 		runsDTO[k] = WorkflowRunDTO{
-			Status: v.BuildStatus.String(),
+			Status: v.Status.String(),
 			URL:    v.HTMLURL,
 			Error:  errorToErrorDTO(v.Error),
 		}
@@ -249,7 +249,7 @@ func errorToMessage(err error) string {
 	}
 	// All other errors (rediscovery failures, rate limits, network issues)
 	// map to a generic message. The specific error is in server logs.
-	return "Unable to fetch build status. Please try again later."
+	return "Unable to fetch workflow run status. Please try again later."
 }
 
 func errorToCode(err error) *int {

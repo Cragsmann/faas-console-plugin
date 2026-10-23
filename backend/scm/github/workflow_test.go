@@ -124,7 +124,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			DeferCleanup(w.Stop)
 
 			first := receiveWTO(w.ResultChan())
-			Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
+			Expect(first["alice/fn"].Status).To(Equal(scm.Building))
 
 			go func() {
 				tickPoll() // this should result in 429 if proper caching is not in place
@@ -132,7 +132,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			}()
 
 			second := receiveWTO(w.ResultChan())
-			Expect(second["alice/fn"].BuildStatus).To(Equal(scm.Succeeded))
+			Expect(second["alice/fn"].Status).To(Equal(scm.Succeeded))
 		},
 		Entry("0 bytes of padding", 0),
 		Entry("14_000 bytes of padding", 14_000),
@@ -176,12 +176,12 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		first := receiveWTO(w.ResultChan())
 		Expect(first).To(HaveLen(1))
 
-		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
 
 		// Trigger poll to get the second snapshot with changed status
 		go tickPoll()
 		second := receiveWTO(w.ResultChan())
-		Expect(second["alice/fn"].BuildStatus).To(Equal(scm.Succeeded))
+		Expect(second["alice/fn"].Status).To(Equal(scm.Succeeded))
 	})
 
 	It("does not re-emit while the run is unchanged", func() {
@@ -203,7 +203,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		DeferCleanup(w.Stop)
 
 		first := receiveWTO(w.ResultChan()) // call 1: in_progress
-		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
 
 		go func() {
 			tickPoll() // call 2: in_progress again, suppressed (no emit, no block)
@@ -211,7 +211,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		}()
 
 		second := receiveWTO(w.ResultChan())
-		Expect(second["alice/fn"].BuildStatus).To(Equal(scm.Succeeded))
+		Expect(second["alice/fn"].Status).To(Equal(scm.Succeeded))
 	})
 
 	It("carries a repo's last-known run forward across a transient poll error", func() {
@@ -240,7 +240,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		DeferCleanup(w.Stop)
 
 		first := receiveWTO(w.ResultChan())
-		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
 
 		// Trigger poll to hit the transient error
 		go tickPoll()
@@ -251,7 +251,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		case event := <-w.ResultChan():
 			Expect(event.Err).To(BeNil(), "poll-level error should be nil")
 			run := event.Runs["alice/fn"]
-			Expect(run.BuildStatus).To(Equal(scm.Building), "should carry forward last-known status")
+			Expect(run.Status).To(Equal(scm.Building), "should carry forward last-known status")
 			Expect(run.Error.Error()).To(ContainSubstring("500"), "should mark as stale with error")
 		case <-time.After(300 * time.Millisecond):
 			Fail("expected event with per-repo Error set")
@@ -289,12 +289,12 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			tickPoll() // emit successful workflow run
 		}()
 		failed := receiveWTO(w.ResultChan())
-		Expect(failed["alice/fn"].BuildStatus).To(Equal(scm.Building))
+		Expect(failed["alice/fn"].Status).To(Equal(scm.Building))
 		Expect(failed["alice/fn"].Error).To(HaveOccurred())
 
 		recovered := receiveWTO(w.ResultChan())
 		Expect(recovered["alice/fn"].Error).To(BeNil())
-		Expect(recovered["alice/fn"].BuildStatus).To(Equal(scm.Succeeded))
+		Expect(recovered["alice/fn"].Status).To(Equal(scm.Succeeded))
 	})
 
 	It("propagate error when token is revoked at rediscover", func() {
@@ -411,7 +411,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 		first := receiveWTO(w.ResultChan())
 		Expect(first).To(HaveLen(1))
-		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.None))
+		Expect(first["alice/fn"].Status).To(Equal(scm.None))
 	})
 
 	It("stops polling when Stop() is called", func() {
@@ -429,7 +429,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 		// Get initial snapshot
 		first := receiveWTO(w.ResultChan())
-		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
 
 		// Call Stop()
 		w.Stop()
@@ -483,7 +483,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 		// Get initial snapshot with the run
 		first := receiveWTO(w.ResultChan())
-		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
 
 		// Trigger poll to hit the rate-limited endpoint
 		go tickPoll()
@@ -495,7 +495,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		case event := <-w.ResultChan():
 			Expect(event.Err).To(BeNil(), "poll-level error should be nil")
 			run := event.Runs["alice/fn"]
-			Expect(run.BuildStatus).To(Equal(scm.Building), "should carry forward last-known status")
+			Expect(run.Status).To(Equal(scm.Building), "should carry forward last-known status")
 			Expect(run.Error.Error()).To(ContainSubstring("API rate limit exceeded"), "should mark as stale with error")
 		case <-time.After(2 * time.Second):
 			Fail("expected event with per-repo Error set")
@@ -550,7 +550,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			Expect(runs.Err).To(BeNil(), "poll-level error should be nil")
 			var inProgress, withError int
 			for _, run := range runs.Runs {
-				if run.BuildStatus == scm.Building {
+				if run.Status == scm.Building {
 					inProgress++
 				}
 				if run.Error != nil {
@@ -617,8 +617,8 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		}
 	})
 
-	DescribeTable("maps run status and conclusion to a build status",
-		func(status, conclusion string, expected scm.BuildStatus) {
+	DescribeTable("maps run status and conclusion to a workflow run status",
+		func(status, conclusion string, expected scm.WorkflowRunStatus) {
 			cl := newWatchClientWithFactories(ticker.SilentTickerFactory(), ticker.SilentTickerFactory(),
 				watchFake(
 					"alice",
@@ -638,7 +638,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 			first := receiveWTO(w.ResultChan())
 
-			Expect(first["alice/alpha"].BuildStatus).To(Equal(expected))
+			Expect(first["alice/alpha"].Status).To(Equal(expected))
 		},
 		Entry("queued -> Building", "queued", "", scm.Building),
 		Entry("in_progress -> Building", "in_progress", "", scm.Building),

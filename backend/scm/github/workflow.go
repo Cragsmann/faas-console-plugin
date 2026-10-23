@@ -180,12 +180,12 @@ func (c *ghClient) latestWorkflowRun(ctx context.Context, owner, repo, branch, w
 	// PerPage 1 the single element WorkflowRuns[0] is the newest run.
 	run := runs.WorkflowRuns[0]
 	return scm.WorkflowRun{
-		BuildStatus: deriveBuildStatus(run),
-		HTMLURL:     run.GetHTMLURL(),
+		Status:  deriveWorkflowRunStatus(run),
+		HTMLURL: run.GetHTMLURL(),
 	}
 }
 
-func deriveBuildStatus(run *ghlib.WorkflowRun) scm.BuildStatus {
+func deriveWorkflowRunStatus(run *ghlib.WorkflowRun) scm.WorkflowRunStatus {
 	if run == nil {
 		return scm.None
 	}
@@ -201,7 +201,7 @@ func deriveBuildStatus(run *ghlib.WorkflowRun) scm.BuildStatus {
 			return scm.Failed
 		default:
 			// GitHub conclusions "skipped", "neutral", "stale", "action_required"
-			// do not indicate success or failure, so report no build status change.
+			// do not indicate success or failure, so report no workflow run status change.
 			return scm.None
 		}
 	default:

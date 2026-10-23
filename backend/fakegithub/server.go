@@ -156,7 +156,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /repos/{owner}/{repo}/actions/secrets/public-key", s.handleGetPublicKey)
 	s.mux.HandleFunc("PUT /repos/{owner}/{repo}/actions/secrets/{name}", s.handlePutSecret)
 
-	// Actions runs (build status).
+	// Actions runs (workflow run status).
 	s.mux.HandleFunc("GET /repos/{owner}/{repo}/actions/workflows/{workflow}/runs", s.handleListWorkflowRuns)
 
 	// Actions variables
@@ -830,8 +830,8 @@ type adminRunRequest struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	// Workflow is the workflow file the run belongs to. Defaults to the func
-	// build workflow; set it to script a run under a different workflow (e.g. to
-	// verify build-status queries stay scoped to the func workflow).
+	// workflow; set it to script a run under a different workflow (e.g. to
+	// verify workflow run queries stay scoped to the func workflow).
 	Workflow string `json:"workflow"`
 }
 

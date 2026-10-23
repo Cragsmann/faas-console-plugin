@@ -21,13 +21,13 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/ticker"
 )
 
-var _ = Describe("BuildWatch", func() {
+var _ = Describe("WorkflowRunWatch", func() {
 
 	Describe("early failures", func() {
 		It("sends 401 app-error event without an SCM token", func() {
 			req := httptest.NewRequest(http.MethodGet, "/watch", nil)
 			w := httptest.NewRecorder()
-			buildWatchWithSCMClient(&scm.ClientStub{})(w, req)
+			workflowRunWatchWithSCMClient(&scm.ClientStub{})(w, req)
 
 			Expect(w.Code).To(Equal(http.StatusOK))
 			Expect(w.Header().Get("Content-Type")).To(Equal("text/event-stream"))
@@ -51,7 +51,7 @@ var _ = Describe("BuildWatch", func() {
 			req := httptest.NewRequest(http.MethodGet, "/watch", nil)
 			req.Header.Set("X-SCM-Token", "pat")
 			w := httptest.NewRecorder()
-			buildWatchWithSCMClient(scmClient)(w, req)
+			workflowRunWatchWithSCMClient(scmClient)(w, req)
 
 			Expect(w.Code).To(Equal(http.StatusOK))
 			Expect(w.Header().Get("Content-Type")).To(Equal("text/event-stream"))
@@ -75,7 +75,7 @@ var _ = Describe("BuildWatch", func() {
 			req := httptest.NewRequest(http.MethodGet, "/watch", nil)
 			req.Header.Set("X-SCM-Token", "pat")
 			w := httptest.NewRecorder()
-			buildWatchWithSCMClient(scmClient)(w, req)
+			workflowRunWatchWithSCMClient(scmClient)(w, req)
 
 			Expect(w.Code).To(Equal(http.StatusOK))
 			Expect(w.Header().Get("Content-Type")).To(Equal("text/event-stream"))
@@ -92,7 +92,7 @@ var _ = Describe("BuildWatch", func() {
 	})
 
 	It("emits a heartbeat comment on demand", func() {
-		w := scm.StubWatch{C: make(chan scm.WorkflowRunsEvent)}
+		w := scm.WorkflowWatchStub{C: make(chan scm.WorkflowRunsEvent)}
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
 				return &w, nil
@@ -111,11 +111,11 @@ var _ = Describe("BuildWatch", func() {
 		Expect(bs).To(Equal([]byte{':', '\n', '\n'}))
 	})
 
-	It("emits an SSE frame per snapshot, keyed by owner/repo in build vocabulary", func() {
+	It("emits an SSE frame per snapshot, keyed by owner/repo in workflow run vocabulary", func() {
 		ch := make(chan scm.WorkflowRunsEvent, 4)
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
-				return &scm.StubWatch{C: ch}, nil
+				return &scm.WorkflowWatchStub{C: ch}, nil
 			},
 		}
 
@@ -123,14 +123,14 @@ var _ = Describe("BuildWatch", func() {
 
 		ch <- scm.WorkflowRunsEvent{
 			Runs: map[string]scm.WorkflowRun{
-				"alice/fn": {BuildStatus: scm.Building},
+				"alice/fn": {Status: scm.Building},
 			},
 		}
 		ch <- scm.WorkflowRunsEvent{
 			Runs: map[string]scm.WorkflowRun{
 				"alice/fn": {
-					BuildStatus: scm.Failed,
-					HTMLURL:     "https://github.com/alice/fn/actions/runs/1",
+					Status:  scm.Failed,
+					HTMLURL: "https://github.com/alice/fn/actions/runs/1",
 				},
 			},
 		}
@@ -139,14 +139,14 @@ var _ = Describe("BuildWatch", func() {
 
 		first := receiveWTO(events)
 		Expect(first).To(Equal(workflowEvent{
-			buildStatus: map[string]handler.WorkflowRunDTO{
+			workflowRunStatus: map[string]handler.WorkflowRunDTO{
 				"alice/fn": {Status: "Building"},
 			},
 		}))
 
 		second := receiveWTO(events)
 		Expect(second).To(Equal(workflowEvent{
-			buildStatus: map[string]handler.WorkflowRunDTO{
+			workflowRunStatus: map[string]handler.WorkflowRunDTO{
 				"alice/fn": {
 					Status: "Failed",
 					URL:    "https://github.com/alice/fn/actions/runs/1",
@@ -159,7 +159,7 @@ var _ = Describe("BuildWatch", func() {
 		ch := make(chan scm.WorkflowRunsEvent, 1)
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
-				return &scm.StubWatch{C: ch}, nil
+				return &scm.WorkflowWatchStub{C: ch}, nil
 			},
 		}
 
@@ -172,7 +172,7 @@ var _ = Describe("BuildWatch", func() {
 		events := readWorkflowEventStream(respBody)
 		evt := receiveWTO(events)
 		Expect(evt).To(Equal(workflowEvent{
-			buildStatus: map[string]handler.WorkflowRunDTO{
+			workflowRunStatus: map[string]handler.WorkflowRunDTO{
 				"alice/fn": {Status: "None"},
 			},
 		}))
@@ -180,7 +180,7 @@ var _ = Describe("BuildWatch", func() {
 
 	It("ends the stream when the watch channel closes", func() {
 		ch := make(chan scm.WorkflowRunsEvent)
-		tw := &scm.StubWatch{C: ch}
+		tw := &scm.WorkflowWatchStub{C: ch}
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
 				return tw, nil
@@ -190,13 +190,13 @@ var _ = Describe("BuildWatch", func() {
 		respBody := startWatchStream(scmClient, ticker.SilentTickerFactory())
 
 		ch <- scm.WorkflowRunsEvent{
-			Runs: map[string]scm.WorkflowRun{"alice/fn": {BuildStatus: scm.Building}},
+			Runs: map[string]scm.WorkflowRun{"alice/fn": {Status: scm.Building}},
 		}
 
 		events := readWorkflowEventStream(respBody)
 		first := receiveWTO(events)
 		Expect(first).To(Equal(workflowEvent{
-			buildStatus: map[string]handler.WorkflowRunDTO{
+			workflowRunStatus: map[string]handler.WorkflowRunDTO{
 				"alice/fn": {Status: "Building"},
 			},
 		}))
@@ -211,7 +211,7 @@ var _ = Describe("BuildWatch", func() {
 		ch := make(chan scm.WorkflowRunsEvent, 2)
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
-				return &scm.StubWatch{C: ch}, nil
+				return &scm.WorkflowWatchStub{C: ch}, nil
 			},
 		}
 
@@ -222,8 +222,8 @@ var _ = Describe("BuildWatch", func() {
 		ch <- scm.WorkflowRunsEvent{Err: watchErr}
 		ch <- scm.WorkflowRunsEvent{Runs: map[string]scm.WorkflowRun{
 			"alice/fn": {
-				BuildStatus: scm.Succeeded,
-				HTMLURL:     "example.com/run/1",
+				Status:  scm.Succeeded,
+				HTMLURL: "example.com/run/1",
 			},
 		}}
 
@@ -233,14 +233,14 @@ var _ = Describe("BuildWatch", func() {
 		errorEvt := receiveWTO(events)
 		Expect(errorEvt).To(Equal(workflowEvent{
 			appError: &handler.ErrorDTO{
-				Message: "Unable to fetch build status. Please try again later.",
+				Message: "Unable to fetch workflow run status. Please try again later.",
 			},
 		}))
 
-		// Verify the stream continues with build status
+		// Verify the stream continues with workflow run status
 		statusEvt := receiveWTO(events)
 		Expect(statusEvt).To(Equal(workflowEvent{
-			buildStatus: map[string]handler.WorkflowRunDTO{
+			workflowRunStatus: map[string]handler.WorkflowRunDTO{
 				"alice/fn": {
 					Status: "Succeeded",
 					URL:    "example.com/run/1",
@@ -253,13 +253,13 @@ var _ = Describe("BuildWatch", func() {
 		ch := make(chan scm.WorkflowRunsEvent)
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
-				return &scm.StubWatch{C: ch}, nil
+				return &scm.WorkflowWatchStub{C: ch}, nil
 			},
 		}
 
 		beat, factory := ticker.CreateFakeTickerFactory()
 		mux := http.NewServeMux()
-		mux.HandleFunc("GET /watch", buildWatchWithSCMClient(scmClient, handler.WithHeartbeatTickerFactory(factory)))
+		mux.HandleFunc("GET /watch", workflowRunWatchWithSCMClient(scmClient, handler.WithHeartbeatTickerFactory(factory)))
 		ts := httptest.NewServer(mux)
 		DeferCleanup(ts.Close)
 
@@ -291,7 +291,7 @@ var _ = Describe("BuildWatch", func() {
 		ch := make(chan scm.WorkflowRunsEvent, 1)
 		scmClient := &scm.ClientStub{
 			OnWatchWorkflowRuns: func(ctx context.Context, workflowFilename string) (scm.WorkflowWatch, error) {
-				return &scm.StubWatch{C: ch}, nil
+				return &scm.WorkflowWatchStub{C: ch}, nil
 			},
 		}
 		ch <- scm.WorkflowRunsEvent{
@@ -332,19 +332,19 @@ data: {"status": "Building"}}
 		}))
 		second := receiveWTO(events)
 		Expect(second).To(Equal(workflowEvent{
-			buildStatus: map[string]handler.WorkflowRunDTO{
+			workflowRunStatus: map[string]handler.WorkflowRunDTO{
 				"alice/fn": {Status: "Building"},
 			},
 		}))
 	})
 })
 
-// buildWatchWithStub returns the handler wired to stub instead of the SCM
+// workflowRunWatchWithSCMClient returns the handler wired to stub instead of the SCM
 // registry it defaults to, ignoring the token the way the stubs ignore
 // authentication. Any opts are applied after, so a spec can name its heartbeat.
-func buildWatchWithSCMClient(scmClient scm.Client, opts ...handler.WatchOption) http.HandlerFunc {
+func workflowRunWatchWithSCMClient(scmClient scm.Client, opts ...handler.WatchOption) http.HandlerFunc {
 	withStub := handler.WithSCMFactory(func(string) scm.Client { return scmClient })
-	return handler.BuildWatch(append([]handler.WatchOption{withStub}, opts...)...)
+	return handler.WorkflowRunWatch(append([]handler.WatchOption{withStub}, opts...)...)
 }
 
 func receiveWTO(ch <-chan workflowEvent) workflowEvent {
@@ -358,9 +358,9 @@ func receiveWTO(ch <-chan workflowEvent) workflowEvent {
 }
 
 type workflowEvent struct {
-	buildStatus map[string]handler.WorkflowRunDTO
-	appError    *handler.ErrorDTO
-	err         error
+	workflowRunStatus map[string]handler.WorkflowRunDTO
+	appError          *handler.ErrorDTO
+	err               error
 }
 
 func readWorkflowEventStream(r io.Reader) <-chan workflowEvent {
@@ -378,7 +378,7 @@ func readWorkflowEventStream(r io.Reader) <-chan workflowEvent {
 			}
 			switch d := e.Data.(type) {
 			case map[string]handler.WorkflowRunDTO:
-				ch <- workflowEvent{buildStatus: d}
+				ch <- workflowEvent{workflowRunStatus: d}
 			case handler.ErrorDTO:
 				ch <- workflowEvent{appError: &d}
 			default:
@@ -529,7 +529,7 @@ func readSSELine(r *bufio.Reader) ([]byte, error) {
 
 func startWatchStream(scmClient scm.Client, factory ticker.Factory) io.Reader {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /watch", buildWatchWithSCMClient(scmClient, handler.WithHeartbeatTickerFactory(factory)))
+	mux.HandleFunc("GET /watch", workflowRunWatchWithSCMClient(scmClient, handler.WithHeartbeatTickerFactory(factory)))
 	ts := httptest.NewServer(mux)
 	DeferCleanup(ts.Close)
 

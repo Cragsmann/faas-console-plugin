@@ -41,7 +41,7 @@ func New(pat string) scm.Client {
 
 func NewWithBaseURL(pat, baseURL string, opts ...Option) scm.Client {
 	// Its own ETag cache, so responses are never served across PATs. Unchanged
-	// build status comes back as a 304, which does NOT count against the
+	// workflow run status comes back as a 304, which does NOT count against the
 	// primary rate limit, so the 3s poll loop stays nearly free. See
 	// httpcache.NewETagCache.
 	httpClient := &http.Client{Transport: httpcache.NewETagCache(http.DefaultTransport), Timeout: 30 * time.Second}

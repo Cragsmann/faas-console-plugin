@@ -87,28 +87,31 @@ type WorkflowWatch interface {
 	Stop()
 }
 
-type StubWatch struct {
+type WorkflowWatchStub struct {
 	C chan WorkflowRunsEvent
 	o sync.Once
 }
 
-func (w *StubWatch) ResultChan() <-chan WorkflowRunsEvent { return w.C }
-func (w *StubWatch) Stop() {
+func (w *WorkflowWatchStub) ResultChan() <-chan WorkflowRunsEvent { return w.C }
+func (w *WorkflowWatchStub) Stop() {
 	w.o.Do(func() {
 		close(w.C)
 	})
 }
 
-type BuildStatus int
+type WorkflowRunStatus int
 
+// String renders these as the status field of a build-status frame, so the
+// names are part of the SSE contract the frontend parses, not just internal
+// vocabulary. Renaming Building to Running means changing both ends at once.
 const (
-	None BuildStatus = iota
+	None WorkflowRunStatus = iota
 	Building
 	Succeeded
 	Failed
 )
 
-func (b BuildStatus) String() string {
+func (b WorkflowRunStatus) String() string {
 	switch b {
 	case None:
 		return "None"
@@ -119,16 +122,16 @@ func (b BuildStatus) String() string {
 	case Failed:
 		return "Failed"
 	}
-	return fmt.Sprintf("unknown BuildStatus: %d", b)
+	return fmt.Sprintf("unknown WorkflowRunStatus: %d", b)
 }
 
 // WorkflowRun is the latest GitHub Actions run of a specific workflow file on a
 // repo branch. A nil *WorkflowRun means the workflow has no runs on that branch
 // (including when the workflow file does not exist in the repo).
 type WorkflowRun struct {
-	BuildStatus BuildStatus
-	HTMLURL     string
-	Error       error
+	Status  WorkflowRunStatus
+	HTMLURL string
+	Error   error
 }
 
 type ClientStub struct {
@@ -219,7 +222,7 @@ func (s *ClientStub) WatchWorkflowRuns(ctx context.Context, workflowFilename str
 	if s.OnWatchWorkflowRuns != nil {
 		return s.OnWatchWorkflowRuns(ctx, workflowFilename)
 	}
-	w := StubWatch{C: make(chan WorkflowRunsEvent)}
+	w := WorkflowWatchStub{C: make(chan WorkflowRunsEvent)}
 	w.Stop()
 	return &w, nil
 }
