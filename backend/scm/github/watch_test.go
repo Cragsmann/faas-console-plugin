@@ -186,9 +186,14 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 	It("does not re-emit while the run is unchanged", func() {
 		tickPoll, pollFactory := ticker.CreateFakeTickerFactory()
+		var calls atomic.Int32
 		cl := newWatchClientWithFactories(pollFactory, ticker.SilentTickerFactory(), watchFake("alice", []map[string]any{repoItem("alice", "fn", "main")},
 			func(w http.ResponseWriter, r *http.Request) {
-				writeRuns(w, map[string]any{"id": 1, "status": "in_progress"})
+				if calls.Add(1) <= 2 {
+					writeRuns(w, map[string]any{"id": 1, "status": "in_progress"})
+				} else {
+					writeRuns(w, map[string]any{"id": 1, "status": "completed", "conclusion": "success"})
+				}
 			}))
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -197,14 +202,16 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(w.Stop)
 
-		receiveWTO(w.ResultChan()) // receive an initial snapshot
+		first := receiveWTO(w.ResultChan()) // call 1: in_progress
+		Expect(first["alice/fn"].BuildStatus).To(Equal(scm.Building))
 
-		go tickPoll()
-		select {
-		case <-w.ResultChan():
-			Fail("expected no re-emit while the run is unchanged")
-		case <-time.After(time.Millisecond * 10):
-		}
+		go func() {
+			tickPoll() // call 2: in_progress again, suppressed (no emit, no block)
+			tickPoll() // call 3: completed, emitted
+		}()
+
+		second := receiveWTO(w.ResultChan())
+		Expect(second["alice/fn"].BuildStatus).To(Equal(scm.Succeeded))
 	})
 
 	It("carries a repo's last-known run forward across a transient poll error", func() {
@@ -257,11 +264,13 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		cl := newWatchClientWithFactories(pollFactory, ticker.SilentTickerFactory(), watchFake("alice", []map[string]any{repoItem("alice", "fn", "main")},
 			func(w http.ResponseWriter, r *http.Request) {
 				switch phase.Add(1) {
-				case 1, 4:
+				case 1:
 					writeRuns(w, map[string]any{"id": 1, "status": "in_progress"})
 				case 2, 3:
 					w.WriteHeader(http.StatusInternalServerError)
 					json.NewEncoder(w).Encode(map[string]string{"message": "upstream unavailable"})
+				case 4:
+					writeRuns(w, map[string]any{"id": 1, "status": "completed", "conclusion": "success"})
 				}
 			}))
 
@@ -274,19 +283,18 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		initial := receiveWTO(w.ResultChan())
 		Expect(initial["alice/fn"].Error).To(BeNil())
 
-		go tickPoll()
+		go func() {
+			tickPoll() // first 500
+			tickPoll() // second 500 -- should not emit
+			tickPoll() // emit successful workflow run
+		}()
 		failed := receiveWTO(w.ResultChan())
 		Expect(failed["alice/fn"].BuildStatus).To(Equal(scm.Building))
 		Expect(failed["alice/fn"].Error).To(HaveOccurred())
 
-		go tickPoll()
-		Consistently(w.ResultChan(), 100*time.Millisecond).ShouldNot(Receive(), "expected a fresh error with the same semantics to be suppressed")
-
-		// A following emitting poll proves the watch loop processed the silent poll
-		// before the test finishes, rather than merely completing its HTTP handler.
-		go tickPoll()
 		recovered := receiveWTO(w.ResultChan())
 		Expect(recovered["alice/fn"].Error).To(BeNil())
+		Expect(recovered["alice/fn"].BuildStatus).To(Equal(scm.Succeeded))
 	})
 
 	It("propagate error when token is revoked at rediscover", func() {
