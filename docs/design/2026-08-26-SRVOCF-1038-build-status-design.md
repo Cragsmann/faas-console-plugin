@@ -22,8 +22,9 @@ the list current as a deployment progresses.
 ## Scope
 
 - Surface only in the **functions list** (no separate post-save detail view).
-- Simple statuses only: a build is **Building**, **Succeeded** or **Failed**,
-  plus **None** for "no run to report". More granular states can come later.
+- Simple statuses only: a workflow run is **InProgress**, **Succeeded** or
+  **Failed**, plus **None** for "no run to report". More granular states can
+  come later.
 - Live updates via **SSE**, one stream for the whole list.
 - Deterministic testing via a scripted fake GitHub Actions API.
 
@@ -110,7 +111,7 @@ The merged status is a composite, not a single flattened string:
 ```ts
 interface FunctionStatus {
   cluster: ClusterStatus;  // from the ksvc + Deployment watch
-  workflow: WorkflowRun;   // from the SSE build stream
+  workflow: WorkflowRun;   // from the SSE workflow run stream
 }
 
 interface ClusterStatus {
@@ -119,7 +120,7 @@ interface ClusterStatus {
 }
 
 interface WorkflowRun {
-  status: 'None' | 'Building' | 'Succeeded' | 'Failed';
+  status: 'None' | 'InProgress' | 'Succeeded' | 'Failed';
   url?: string;
   error?: AppError;
 }
@@ -141,7 +142,7 @@ beside it:
 
 | Workflow run  | Secondary indicator                                                      |
 |---------------|--------------------------------------------------------------------------|
-| Building      | spinning sync icon, tooltip "Workflow run in progress"                    |
+| InProgress    | spinning sync icon, tooltip "Workflow run in progress"                    |
 | Failed        | red warning icon linked to the run, tooltip "Latest workflow run failed"  |
 | Succeeded     | none                                                                      |
 | None (no run) | none                                                                      |
@@ -185,7 +186,7 @@ Notes:
   beside a live build spinner. An entry whose `func.yaml` did not parse at all
   never has cluster data (it has no name to match a ksvc label against), but it
   is still keyed on its repo, so it does pick up its workflow run.
-- The backend returns a build-centric status (Building/Succeeded/Failed/None);
+- The backend returns a workflow-run status (InProgress/Succeeded/Failed/None);
   the merge to `FunctionStatus` happens in the frontend, which is the only place
   that also has the cluster status.
 
@@ -286,7 +287,7 @@ type WorkflowRun struct {
     Error   error
 }
 
-type WorkflowRunStatus int // None | Building | Succeeded | Failed
+type WorkflowRunStatus int // None | InProgress | Succeeded | Failed
 ```
 
 Design notes on these shapes:
@@ -378,7 +379,8 @@ key everything is correlated on, matching what `listFunctions` returns.
 
 ### Endpoint (`backend/handler/workflow.go`)
 
-`GET /api/v1/func/build/watch` (SSE) is the only build endpoint. It is
+`GET /api/v1/func/workflow-run/watch` (SSE) is the only workflow run endpoint.
+It is
 **parameterless and user-scoped**, mirroring `GET /api/v1/func/list`: it requires
 only the `X-SCM-Token` header, and repo discovery happens inside
 `WatchWorkflowRuns`. No owner/name/branch params, no per-function URLs, one
@@ -387,9 +389,10 @@ connection for the whole list.
 - Headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`,
   `Connection: keep-alive`, `X-Accel-Buffering: no`, then an immediate flush so
   the client's request completes and it can start reading.
-- Each snapshot from the watch is written as one `event: build-status` frame.
+- Each snapshot from the watch is written as one `event: workflow-run-status`
+  frame.
   The first frame is the full snapshot; a full snapshot is re-sent whenever any
-  function's build status changes.
+  function's workflow run status changes.
 - Heartbeat comment (`:\n\n`) every 15s to survive proxy idle timeouts.
 - Exit on `r.Context().Done()`, on write error (detects client disconnect
   without TCP close), or when the watch channel closes. The first two are
@@ -433,7 +436,7 @@ special-cases it.
 
 #### Wire format
 
-`build-status`, keyed by `owner/name`:
+`workflow-run-status`, keyed by `owner/name`:
 
 ```json
 {
@@ -442,7 +445,7 @@ special-cases it.
     "url": "https://github.com/matejvasek/fn-testing-a/actions/runs/123"
   },
   "matejvasek/fn-testing-b": {
-    "status": "Building",
+    "status": "InProgress",
     "url": "https://github.com/matejvasek/fn-testing-b/actions/runs/124",
     "error": { "message": "Unable to fetch workflow run status. Please try again later." }
   }
@@ -474,7 +477,7 @@ type ErrorDTO struct {
 type WorkflowRunRecord = Record<string, WorkflowRun>; // keyed by "owner/repo"
 
 interface WorkflowRun {
-  status: 'None' | 'Building' | 'Succeeded' | 'Failed';
+  status: 'None' | 'InProgress' | 'Succeeded' | 'Failed';
   url?: string;
   error?: AppError;
 }
@@ -510,9 +513,9 @@ the frontend branches on (it stops reconnecting and prompts for a new token);
 `502` is sent when initial repo discovery fails. Errors raised mid-stream carry
 `401` or no code at all.
 
-`status` is one of `Building | Succeeded | Failed | None`, derived from the run:
+`status` is one of `InProgress | Succeeded | Failed | None`, derived from the run:
 
-- `queued` / `in_progress` / `waiting` / `requested` / `pending` -> `Building`
+- `queued` / `in_progress` / `waiting` / `requested` / `pending` -> `InProgress`
 - `completed` + `success` -> `Succeeded`
 - `completed` + `failure|cancelled|timed_out|startup_failure` -> `Failed`
 - `completed` + `skipped|neutral|stale|action_required` -> `None`; these are not
@@ -585,7 +588,7 @@ about build status.
 kill a long-lived stream) and returns a close function. It owns the mapping from
 the three wire events to its two callbacks:
 
-- `build-status` -> `eventCbk(runs)` as a `WorkflowRunRecord`.
+- `workflow-run-status` -> `eventCbk(runs)` as a `WorkflowRunRecord`.
 - `app-error` -> `errorCbk(message)`. A `code` of `401` is terminal: it reports a
   reconnect-and-refresh message and closes the stream, because a bad or expired
   PAT will not recover and reconnecting would spin.
@@ -677,7 +680,7 @@ Backend (Ginkgo/Gomega):
   replay, revalidation instead of honouring `max-age`, the header merge and
   hop-by-hop stripping, bodies of any size, the uncacheable cases (non-GET,
   non-200, no ETag), transport and body failures, and concurrent use.
-- `handler`: build-status frames carry the mapped status; an initial snapshot
+- `handler`: workflow-run-status frames carry the mapped status; an initial snapshot
   then a new snapshot on change; heartbeats; `X-SCM-Token` required; `app-error`
   frames for pre-stream and mid-stream failures; the stream continues after a
   recoverable error; channel close ends the stream. Driven through
@@ -732,5 +735,5 @@ page. What is covered:
 
 - Faithful workflow execution via `act` (deferred; `/_admin` scripting instead).
 - Live streaming on any surface other than the list.
-- Granular per-step progress beyond Building/Succeeded/Failed.
+- Granular per-step progress beyond InProgress/Succeeded/Failed.
 - Persisting build history.

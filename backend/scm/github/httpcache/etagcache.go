@@ -33,7 +33,7 @@ type cacheEntry struct {
 // returned tripper is safe for concurrent use.
 //
 // Conditional requests answered with a 304 do not count against GitHub's
-// primary rate limit, which is what keeps the 3s build-status poll affordable:
+// primary rate limit, which is what keeps the 3s workflow run poll affordable:
 // an unchanged status costs nothing, a real change costs one request.
 //
 // Freshness caching, serving a response without contacting GitHub at all for as

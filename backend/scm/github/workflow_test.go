@@ -124,7 +124,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			DeferCleanup(w.Stop)
 
 			first := receiveWTO(w.ResultChan())
-			Expect(first["alice/fn"].Status).To(Equal(scm.Building))
+			Expect(first["alice/fn"].Status).To(Equal(scm.InProgress))
 
 			go func() {
 				tickPoll() // this should result in 429 if proper caching is not in place
@@ -176,7 +176,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		first := receiveWTO(w.ResultChan())
 		Expect(first).To(HaveLen(1))
 
-		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.InProgress))
 
 		// Trigger poll to get the second snapshot with changed status
 		go tickPoll()
@@ -203,7 +203,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		DeferCleanup(w.Stop)
 
 		first := receiveWTO(w.ResultChan()) // call 1: in_progress
-		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.InProgress))
 
 		go func() {
 			tickPoll() // call 2: in_progress again, suppressed (no emit, no block)
@@ -240,7 +240,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		DeferCleanup(w.Stop)
 
 		first := receiveWTO(w.ResultChan())
-		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.InProgress))
 
 		// Trigger poll to hit the transient error
 		go tickPoll()
@@ -251,7 +251,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		case event := <-w.ResultChan():
 			Expect(event.Err).To(BeNil(), "poll-level error should be nil")
 			run := event.Runs["alice/fn"]
-			Expect(run.Status).To(Equal(scm.Building), "should carry forward last-known status")
+			Expect(run.Status).To(Equal(scm.InProgress), "should carry forward last-known status")
 			Expect(run.Error.Error()).To(ContainSubstring("500"), "should mark as stale with error")
 		case <-time.After(300 * time.Millisecond):
 			Fail("expected event with per-repo Error set")
@@ -289,7 +289,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			tickPoll() // emit successful workflow run
 		}()
 		failed := receiveWTO(w.ResultChan())
-		Expect(failed["alice/fn"].Status).To(Equal(scm.Building))
+		Expect(failed["alice/fn"].Status).To(Equal(scm.InProgress))
 		Expect(failed["alice/fn"].Error).To(HaveOccurred())
 
 		recovered := receiveWTO(w.ResultChan())
@@ -429,7 +429,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 		// Get initial snapshot
 		first := receiveWTO(w.ResultChan())
-		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.InProgress))
 
 		// Call Stop()
 		w.Stop()
@@ -483,7 +483,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 		// Get initial snapshot with the run
 		first := receiveWTO(w.ResultChan())
-		Expect(first["alice/fn"].Status).To(Equal(scm.Building))
+		Expect(first["alice/fn"].Status).To(Equal(scm.InProgress))
 
 		// Trigger poll to hit the rate-limited endpoint
 		go tickPoll()
@@ -495,7 +495,7 @@ var _ = Describe("WatchWorkflowRuns", func() {
 		case event := <-w.ResultChan():
 			Expect(event.Err).To(BeNil(), "poll-level error should be nil")
 			run := event.Runs["alice/fn"]
-			Expect(run.Status).To(Equal(scm.Building), "should carry forward last-known status")
+			Expect(run.Status).To(Equal(scm.InProgress), "should carry forward last-known status")
 			Expect(run.Error.Error()).To(ContainSubstring("API rate limit exceeded"), "should mark as stale with error")
 		case <-time.After(2 * time.Second):
 			Fail("expected event with per-repo Error set")
@@ -550,14 +550,14 @@ var _ = Describe("WatchWorkflowRuns", func() {
 			Expect(runs.Err).To(BeNil(), "poll-level error should be nil")
 			var inProgress, withError int
 			for _, run := range runs.Runs {
-				if run.Status == scm.Building {
+				if run.Status == scm.InProgress {
 					inProgress++
 				}
 				if run.Error != nil {
 					withError++
 				}
 			}
-			Expect(inProgress).To(Equal(len(repos)-len(broken)), "healthy repos should show Building")
+			Expect(inProgress).To(Equal(len(repos)-len(broken)), "healthy repos should show InProgress")
 			Expect(withError).To(Equal(len(broken)), "broken repos should have Error set")
 		case <-time.After(time.Second * 2):
 			Fail("timeout")
@@ -640,11 +640,11 @@ var _ = Describe("WatchWorkflowRuns", func() {
 
 			Expect(first["alice/alpha"].Status).To(Equal(expected))
 		},
-		Entry("queued -> Building", "queued", "", scm.Building),
-		Entry("in_progress -> Building", "in_progress", "", scm.Building),
-		Entry("waiting -> Building", "waiting", "", scm.Building),
-		Entry("requested -> Building", "requested", "", scm.Building),
-		Entry("pending -> Building", "pending", "", scm.Building),
+		Entry("queued -> InProgress", "queued", "", scm.InProgress),
+		Entry("in_progress -> InProgress", "in_progress", "", scm.InProgress),
+		Entry("waiting -> InProgress", "waiting", "", scm.InProgress),
+		Entry("requested -> InProgress", "requested", "", scm.InProgress),
+		Entry("pending -> InProgress", "pending", "", scm.InProgress),
 		Entry("completed+success -> Succeeded", "completed", "success", scm.Succeeded),
 		Entry("completed+failure -> Failed", "completed", "failure", scm.Failed),
 		Entry("completed+cancelled -> Failed", "completed", "cancelled", scm.Failed),

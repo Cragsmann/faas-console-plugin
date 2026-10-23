@@ -19,8 +19,8 @@ import (
 const defaultHeartbeat = 15 * time.Second
 
 const (
-	appErrorEvent    = "app-error"
-	buildStatusEvent = "build-status"
+	appErrorEvent          = "app-error"
+	workflowRunStatusEvent = "workflow-run-status"
 )
 
 type WorkflowRunDTO struct {
@@ -47,8 +47,8 @@ type ErrorDTO struct {
 //
 // Two event types are sent:
 //
-//	build-status: {"owner/repo": {status, url?, error?}}
-//	  status: "Building" | "Succeeded" | "Failed" | "None"
+//	workflow-run-status: {"owner/repo": {status, url?, error?}}
+//	  status: "InProgress" | "Succeeded" | "Failed" | "None"
 //	  url?:   workflow run URL, absent when there is no run
 //	  error?: {message, code?}, absent when that repo polled cleanly
 //	app-error: {message, code?}
@@ -189,7 +189,7 @@ func (e *eventWriter) writeWorkflowRunStatus(runs map[string]scm.WorkflowRun) er
 			Error:  errorToErrorDTO(v.Error),
 		}
 	}
-	return e.writeEvent(buildStatusEvent, runsDTO)
+	return e.writeEvent(workflowRunStatusEvent, runsDTO)
 }
 
 // writeHTTPError reports a failure the handler would have answered with an

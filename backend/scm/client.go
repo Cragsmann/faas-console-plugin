@@ -101,22 +101,23 @@ func (w *WorkflowWatchStub) Stop() {
 
 type WorkflowRunStatus int
 
-// String renders these as the status field of a build-status frame, so the
-// names are part of the SSE contract the frontend parses, not just internal
-// vocabulary. Renaming Building to Running means changing both ends at once.
 const (
 	None WorkflowRunStatus = iota
-	Building
+	InProgress
 	Succeeded
 	Failed
 )
 
+// String renders the status field of a workflow-run-status frame, so these
+// strings are the SSE contract the frontend parses. Changing one means
+// changing both ends at once; the handler tests assert each of them on the
+// wire.
 func (b WorkflowRunStatus) String() string {
 	switch b {
 	case None:
 		return "None"
-	case Building:
-		return "Building"
+	case InProgress:
+		return "InProgress"
 	case Succeeded:
 		return "Succeeded"
 	case Failed:

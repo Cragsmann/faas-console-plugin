@@ -123,7 +123,7 @@ var _ = Describe("WorkflowRunWatch", func() {
 
 		ch <- scm.WorkflowRunsEvent{
 			Runs: map[string]scm.WorkflowRun{
-				"alice/fn": {Status: scm.Building},
+				"alice/fn": {Status: scm.InProgress},
 			},
 		}
 		ch <- scm.WorkflowRunsEvent{
@@ -140,7 +140,7 @@ var _ = Describe("WorkflowRunWatch", func() {
 		first := receiveWTO(events)
 		Expect(first).To(Equal(workflowEvent{
 			workflowRunStatus: map[string]handler.WorkflowRunDTO{
-				"alice/fn": {Status: "Building"},
+				"alice/fn": {Status: "InProgress"},
 			},
 		}))
 
@@ -190,14 +190,14 @@ var _ = Describe("WorkflowRunWatch", func() {
 		respBody := startWatchStream(scmClient, ticker.SilentTickerFactory())
 
 		ch <- scm.WorkflowRunsEvent{
-			Runs: map[string]scm.WorkflowRun{"alice/fn": {Status: scm.Building}},
+			Runs: map[string]scm.WorkflowRun{"alice/fn": {Status: scm.InProgress}},
 		}
 
 		events := readWorkflowEventStream(respBody)
 		first := receiveWTO(events)
 		Expect(first).To(Equal(workflowEvent{
 			workflowRunStatus: map[string]handler.WorkflowRunDTO{
-				"alice/fn": {Status: "Building"},
+				"alice/fn": {Status: "InProgress"},
 			},
 		}))
 
@@ -317,9 +317,9 @@ data: "code": 401}
 
 :
 
-event: build-status
+event: workflow-run-status
 data: {"alice/fn": 
-data: {"status": "Building"}}
+data: {"status": "InProgress"}}
 
 `)
 
@@ -334,7 +334,7 @@ data: {"status": "Building"}}
 		second := receiveWTO(events)
 		Expect(second).To(Equal(workflowEvent{
 			workflowRunStatus: map[string]handler.WorkflowRunDTO{
-				"alice/fn": {Status: "Building"},
+				"alice/fn": {Status: "InProgress"},
 			},
 		}))
 	})
@@ -367,8 +367,8 @@ type workflowEvent struct {
 func readWorkflowEventStream(r io.Reader) <-chan workflowEvent {
 	ch := make(chan workflowEvent)
 	stream := readSSEEventStream(bufio.NewReader(r), map[string]reflect.Type{
-		"app-error":    reflect.TypeFor[handler.ErrorDTO](),
-		"build-status": reflect.TypeFor[map[string]handler.WorkflowRunDTO](),
+		"app-error":           reflect.TypeFor[handler.ErrorDTO](),
+		"workflow-run-status": reflect.TypeFor[map[string]handler.WorkflowRunDTO](),
 	})
 	go func() {
 		defer close(ch)

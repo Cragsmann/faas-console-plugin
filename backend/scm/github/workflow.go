@@ -192,7 +192,7 @@ func deriveWorkflowRunStatus(run *ghlib.WorkflowRun) scm.WorkflowRunStatus {
 	switch run.GetStatus() {
 	// "waiting", "requested", "pending" mean a run exists but has not finished.
 	case "queued", "in_progress", "waiting", "requested", "pending":
-		return scm.Building
+		return scm.InProgress
 	case "completed":
 		switch run.GetConclusion() {
 		case "success":
