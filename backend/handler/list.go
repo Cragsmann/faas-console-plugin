@@ -28,15 +28,15 @@ const (
 )
 
 type listItem struct {
-	Owner         string         `json:"owner"`
-	RepoName      string         `json:"repoName"`
-	RepoURL       string         `json:"repoURL"`
-	DefaultBranch string         `json:"defaultBranch"`
-	Name          string         `json:"name"`
-	Namespace     string         `json:"namespace"`
-	Runtime       string         `json:"runtime"`
+	Owner         string         `json:"owner,omitempty"`
+	RepoName      string         `json:"repoName,omitempty"`
+	RepoURL       string         `json:"repoURL,omitempty"`
+	DefaultBranch string         `json:"defaultBranch,omitempty"`
+	Name          string         `json:"name,omitempty"`
+	Namespace     string         `json:"namespace,omitempty"`
+	Runtime       string         `json:"runtime,omitempty"`
 	Source        functionSource `json:"source"`
-	Err           string         `json:"err,omitempty"`
+	Err           string         `json:"error,omitempty"`
 }
 
 type funcKey struct {

@@ -1,4 +1,3 @@
-import { useContext, useState } from 'react';
 import {
   ActionGroup,
   Button,
@@ -21,37 +20,25 @@ import {
   TextInput,
   Title,
 } from '@patternfly/react-core';
+import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
+import { useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AuthContext } from '../../../common/context/AuthProvider';
 import {
+  CreateFunctionFormData,
   FunctionRuntime,
   K8sKeyedResource,
   PlainEnvVar,
   ResourceEnvVar,
-} from '../../../common/types';
-import { AuthContext } from '../../../common/context/AuthProvider';
-import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
+} from '../types';
 
 const OCP_INTERNAL_REGISTRY = 'image-registry.openshift-image-registry.svc:5000/';
-
 const runtimeOptions = [
   { value: 'node', label: 'Node.js' },
   { value: 'python', label: 'Python' },
   { value: 'go', label: 'Go' },
   { value: 'quarkus', label: 'Quarkus' },
 ];
-
-export interface CreateFunctionFormData {
-  owner: string;
-  repo: string;
-  branch: string;
-  name: string;
-  runtime: FunctionRuntime;
-  registry: string;
-  namespace: string;
-  plainEnvVars: PlainEnvVar[];
-  secretEnvVars: ResourceEnvVar[];
-  configMapEnvVars: ResourceEnvVar[];
-}
 
 type EnvVarField = 'plainEnvVars' | 'secretEnvVars' | 'configMapEnvVars';
 

@@ -24,8 +24,7 @@ import { useParams } from 'react-router';
 import { getFiles, listFunctions, putFiles } from '../../common/clients/functionsClient';
 import { UserAvatar } from '../../common/components/UserAvatar';
 import { AuthProvider } from '../../common/context/AuthProvider';
-import { FileEntry, FunctionListItem } from '../../common/types';
-import { handlerMap } from '../../common/utils/utils';
+import { FileEntry, FunctionMetadata } from '../../common/types';
 import { EditToolbar } from './components/EditToolbar';
 import { FileTreeView } from './components/FileTreeView';
 
@@ -122,7 +121,7 @@ interface FunctionEditPageState {
   dirtyPaths: Set<string>;
   hasChanges: boolean;
   isLoading: boolean;
-  repoInfo: FunctionListItem | undefined;
+  repoInfo: FunctionMetadata | undefined;
   onFileSelect: (path: string) => void;
   onFileChange: (content: string) => void;
   onFileDelete: (path: string) => void;
@@ -134,7 +133,7 @@ function useFunctionEditPage(): FunctionEditPageState {
 
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [originalFiles, setOriginalFiles] = useState<FileEntry[]>([]);
-  const [repoInfo, setRepoInfo] = useState<FunctionListItem>();
+  const [repoInfo, setRepoInfo] = useState<FunctionMetadata>();
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -163,7 +162,7 @@ function useFunctionEditPage(): FunctionEditPageState {
     let ignore = false;
 
     async function loadFiles() {
-      let repo: { content: FileEntry[]; info: FunctionListItem };
+      let repo: { content: FileEntry[]; info: FunctionMetadata };
       try {
         repo = await resolveRepoContent(repoName!, namespace);
       } catch {
@@ -180,7 +179,12 @@ function useFunctionEditPage(): FunctionEditPageState {
       setFiles(repo.content);
       setOriginalFiles(repo.content.map((f) => ({ ...f })));
       setRepoInfo(repo.info);
-      setSelectedPath(determineHandler(repo.content, repo.info.runtime));
+      setSelectedPath(
+        // If the runtime is missing there is likely a func.yaml parsing issue
+        // so we open the func.yaml that the user can fix it. Error handling
+        // with an alert will be added in a separate story.
+        repo.info.runtime ? determineHandler(repo.content, repo.info.runtime) : 'func.yaml',
+      );
       setIsLoading(false);
     }
 
@@ -215,11 +219,11 @@ function useFunctionEditPage(): FunctionEditPageState {
   const saveFiles = async () => {
     if (!repoInfo) return;
     await putFiles(
-      repoInfo.owner,
-      repoInfo.repoName,
+      repoInfo.owner!,
+      repoInfo.repoName!,
       [...files, ...deletedFiles],
       'Update function files',
-      repoInfo.defaultBranch,
+      repoInfo.defaultBranch!,
     );
     setOriginalFiles(files.map((f) => ({ ...f })));
   };
@@ -276,18 +280,24 @@ function getLanguageFromPath(path: string): Language {
 async function resolveRepoContent(
   repoName: string,
   namespace: string,
-): Promise<{ content: FileEntry[]; info: FunctionListItem }> {
+): Promise<{ content: FileEntry[]; info: FunctionMetadata }> {
   const items = await listFunctions(namespace);
   const item = items.find((r) => r.repoName === repoName);
   if (!item) throw new Error(`repository ${repoName} not found`);
 
   return {
-    content: await getFiles(item.owner, item.repoName),
+    content: await getFiles(item.owner!, item.repoName!),
     info: item,
   };
 }
 
 function determineHandler(loadedFiles: FileEntry[], runtime: string): string {
+  const handlerMap: Record<string, string> = {
+    node: 'index.js',
+    python: 'function/func.py',
+    go: 'handle.go',
+    quarkus: 'src/main/java/functions/Function.java',
+  };
   const handlerPath = handlerMap[runtime];
   if (handlerPath && loadedFiles.find((f) => f.path === handlerPath)) return handlerPath;
   return '';
