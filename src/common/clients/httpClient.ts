@@ -1,9 +1,13 @@
 import { consoleFetch, consoleFetchJSON } from '@openshift-console/dynamic-plugin-sdk';
 import { AUTH_EXPIRED_EVENT } from '../types';
 
-export function customFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export function customFetch(
+  url: string,
+  options: RequestInit = {},
+  timeout?: number,
+): Promise<Response> {
   return announcingAuthExpired(() =>
-    consoleFetch(url, { ...options, headers: plain(options.headers) }),
+    consoleFetch(url, { ...options, headers: plain(options.headers) }, timeout),
   );
 }
 

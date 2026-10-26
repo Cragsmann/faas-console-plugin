@@ -36,11 +36,11 @@ type ErrorDTO struct {
 
 // WorkflowRunWatch returns an HTTP handler that streams workflow run status over SSE.
 //
-// Request: GET with an X-SCM-Token header carrying a GitHub personal access
-// token. The options are wiring seams for tests, see WithSCMFactory and
-// WithHeartbeatTickerFactory.
+// Request: GET with the OpenShift bearer token forwarded by the console proxy.
+// The stored SCM credential is resolved before opening the stream. The options
+// are wiring seams for tests, see WithSCMFactory and WithHeartbeatTickerFactory.
 //
-// Every request that can be flushed gets 200 and text/event-stream. A
+// Authenticated requests that can be flushed get 200 and text/event-stream. A
 // ResponseWriter that is not an http.Flusher gets 500 and a JSON error,
 // because buffering would stall both updates and heartbeats. Once the stream
 // is open no further HTTP status is available, so failures travel as frames.
@@ -53,7 +53,7 @@ type ErrorDTO struct {
 //	  error?: {message, code?}, absent when that repo polled cleanly
 //	app-error: {message, code?}
 //	  message: user-facing text
-//	  code?:   the HTTP status the response would have carried, 401 or 502
+//	  code?:   the HTTP status the response would have carried, 403 or 502
 //
 // Between frames the handler sends an SSE comment as a keepalive, every 15
 // seconds by default. It is a comment, not an event, and no listener fires
@@ -62,11 +62,11 @@ type ErrorDTO struct {
 // A failure confined to one repo, such as a rate limit, rides in that repo's
 // error field and the stream goes on. A failure affecting the whole watch
 // emits app-error, and whether the stream survives depends on when it
-// happens: a missing or invalid token (401) or a failed repo discovery (502)
+// happens: a rejected SCM credential (403) or a failed repo discovery (502)
 // ends the stream, while anything raised once the loop is running leaves it
 // open and lets the client decide whether to reconnect. Otherwise the stream
 // runs until the client disconnects or the request context is cancelled.
-func WorkflowRunWatch(opts ...WatchOption) http.HandlerFunc {
+func (h *Handlers) WorkflowRunWatch(opts ...WatchOption) http.HandlerFunc {
 	cfg := watchConfig{
 		newSCMClient: func(pat string) scm.Client {
 			return config.SCMRegistry.Client(scm.DefaultPlatform, pat)
@@ -79,11 +79,21 @@ func WorkflowRunWatch(opts ...WatchOption) http.HandlerFunc {
 		opt(&cfg)
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		handleWorkflowRunWatch(w, r, cfg.newSCMClient, cfg.heartbeatFactory)
+		ocpToken, ok := extractOCPToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		handleWorkflowRunWatch(w, r, credential.Token, cfg.newSCMClient, cfg.heartbeatFactory)
 	}
 }
 
-func handleWorkflowRunWatch(w http.ResponseWriter, r *http.Request, newSCMClient scm.ClientFactory, heartbeatFactory ticker.Factory) {
+func handleWorkflowRunWatch(w http.ResponseWriter, r *http.Request, pat string, newSCMClient scm.ClientFactory, heartbeatFactory ticker.Factory) {
 	// SSE requires explicit flushing to stream events in real-time. Go's net/http
 	// server always implements http.Flusher, but middleware that wraps ResponseWriter
 	// without forwarding the interface can break this. If flushing is unavailable,
@@ -103,18 +113,13 @@ func handleWorkflowRunWatch(w http.ResponseWriter, r *http.Request, newSCMClient
 
 	ew := eventWriter{out: w}
 
-	pat, ok := extractSCMToken(r)
-	if !ok {
-		ew.writeHTTPError(http.StatusUnauthorized, "X-SCM-Token header is required")
-		return
-	}
 	client := newSCMClient(pat)
 	ctx := r.Context()
 
 	watch, err := client.WatchWorkflowRuns(ctx, functions.WorkflowFilename)
 	if err != nil {
 		if errors.Is(err, scm.ErrUnauthorized) {
-			ew.writeHTTPError(http.StatusUnauthorized, "invalid SCM token")
+			ew.writeHTTPError(http.StatusForbidden, "invalid SCM token")
 			return
 		}
 		slog.Error("workflow run watch: watch workflow runs failed", "err", err)
@@ -254,7 +259,7 @@ func errorToMessage(err error) string {
 
 func errorToCode(err error) *int {
 	if errors.Is(err, scm.ErrUnauthorized) {
-		return new(401)
+		return new(403)
 	}
 	return nil
 }

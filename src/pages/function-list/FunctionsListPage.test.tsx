@@ -1,7 +1,12 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router';
-import { fetchGithubUserStub, noGithubUserStub, disconnectGithubUserStub } from '../../common/testing/authClientStub';
+import {
+  fetchGithubUserStub,
+  noGithubUserStub,
+  disconnectGithubUserStub,
+  connectGithubUserStub,
+} from '../../common/testing/authClientStub';
 import {
   listFunctionsStub,
   receiveWorkflowRunEventsStub,
@@ -244,7 +249,7 @@ describe('FunctionsListPage', () => {
     });
 
     it('shows error alert when listing functions fails', async () => {
-      listFunctionsStub({ errorResponse: { message: 'Bad credentials', status: 401 } });
+      listFunctionsStub({ errorResponse: { message: 'Bad credentials', status: 403 } });
 
       render(
         <MemoryRouter>
@@ -268,8 +273,11 @@ describe('FunctionsListPage', () => {
 
       listFunctionsStub({ responses: [functionMetadata({ repoName: 'fn-b', name: 'fn-b' })] });
 
-      // Click avatar to open PAT modal
-      await userEvent.setup().click(screen.getByRole('button', { name: 'twoGiants' }));
+      disconnectGithubUserStub();
+      connectGithubUserStub();
+      await userEvent.click(screen.getByRole('button', { name: 'twoGiants' }));
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Disconnect' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Connect to GitHub' }));
 
       // Enter PAT and submit
       await userEvent.setup().type(screen.getByLabelText('Personal Access Token'), 'ghp_new');

@@ -22,7 +22,7 @@ async function handleJSON(res: Response) {
 export const customFetchStub = async (url: string, options?: RequestInit) => {
   const res = await fetch(new URL(url, 'http://localhost').href, options);
   if (!res.ok) {
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     throw Object.assign(new Error(json.message), { response: res, json });
   }
   return res;
@@ -273,21 +273,3 @@ export const useDeleteModalStub = (
   };
 };
 // END: useDeleteModalStub -----------------------------------------------------
-
-// START: consoleFetchJSONFake ------------------------------------------------
-export const consoleFetchJSONFake = async (
-  url: string,
-  _method?: string,
-  options?: RequestInit,
-) => {
-  const res = await fetch(new URL(url, 'http://localhost').href, options);
-  const json = await res.json();
-  if (!res.ok) throw json;
-  return json;
-};
-// END: consoleFetchJSONFake --------------------------------------------------
-
-// START: consoleFetchFake ------------------------------------------------
-export const consoleFetchFake = async (url: string, options?: RequestInit) =>
-  fetch(new URL(url, 'http://localhost').href, options);
-// END: consoleFetchFake --------------------------------------------------
