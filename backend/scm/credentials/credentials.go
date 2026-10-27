@@ -71,21 +71,10 @@ func NewStoreWithClient(client kubernetes.Interface, namespace string, resolver 
 	return &Store{client: client, namespace: namespace, resolver: resolver}, nil
 }
 
-// resolveUser turns the console's bearer token into the user it belongs to.
-// Every public method starts here, so a caller can never reach a credential
-// without having proved whose it is.
-func (s *Store) resolveUser(ctx context.Context, ocpToken string) (identity.User, error) {
+func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Credential) error {
 	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
-		return identity.User{}, fmt.Errorf("resolve OpenShift user: %w", err)
-	}
-	return user, nil
-}
-
-func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Credential) error {
-	user, err := s.resolveUser(ctx, ocpToken)
-	if err != nil {
-		return err
+		return fmt.Errorf("save credential: resolve OpenShift user: %w", err)
 	}
 	return s.write(ctx, user, secretData{
 		Credential: cred.Token,
@@ -98,9 +87,9 @@ func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Creden
 }
 
 func (s *Store) GetCredential(ctx context.Context, ocpToken string) (Credential, error) {
-	user, err := s.resolveUser(ctx, ocpToken)
+	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
-		return Credential{}, err
+		return Credential{}, fmt.Errorf("get credential: resolve OpenShift user: %w", err)
 	}
 
 	data, err := s.read(ctx, user)
@@ -120,9 +109,9 @@ func (s *Store) GetCredential(ctx context.Context, ocpToken string) (Credential,
 }
 
 func (s *Store) DeleteCredential(ctx context.Context, ocpToken string) error {
-	user, err := s.resolveUser(ctx, ocpToken)
+	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete credential: resolve OpenShift user: %w", err)
 	}
 
 	return s.deleteFor(ctx, user)

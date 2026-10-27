@@ -50,6 +50,12 @@ type createRequest struct {
 var errUpstream = errors.New("upstream error")
 
 func (h *Handlers) HandleFuncCreate(w http.ResponseWriter, r *http.Request) {
+	ocpToken, ok := extractOCPToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	var req createRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -60,8 +66,6 @@ func (h *Handlers) HandleFuncCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	ocpToken, _ := extractOCPToken(r)
 
 	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
 	if err != nil {

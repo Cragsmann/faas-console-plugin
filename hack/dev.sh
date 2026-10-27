@@ -139,14 +139,14 @@ backend_gh_flag() {
   fi
 }
 
-ensure_credential_namespace() {
+ensure_credentials_namespace() {
   # The backend puts SCM credential Secrets in the namespace it runs in, which
   # it reads from its ServiceAccount in the pod and falls back to this name off
   # cluster, where there is no pod to ask. It is not configurable from here.
   # Dev does not require the plugin to have ever been deployed here, so create it.
   local ns="console-functions-plugin"
-  oc get namespace "$ns" &>/dev/null 2>&1 || oc create namespace "$ns"
-  log::info "Session Secrets go to namespace $ns"
+  oc get namespace "$ns" &>/dev/null || oc create namespace "$ns"
+  log::info "Credentials Secrets go to namespace $ns"
 }
 
 start_backend() {
@@ -329,7 +329,7 @@ main() {
   install_dependencies
   stop_dev
   resolve_kube_api_server
-  ensure_credential_namespace
+  ensure_credentials_namespace
   write_dev_env
   extract_cluster_ca
   trap 'stop_dev' EXIT INT TERM

@@ -72,7 +72,11 @@ func (h *Handlers) HandleSaveSCMCredential(w http.ResponseWriter, r *http.Reques
 // HandleGetSCMCredential answers with the credential's public representation:
 // which SCM account it belongs to, never the token itself.
 func (h *Handlers) HandleGetSCMCredential(w http.ResponseWriter, r *http.Request) {
-	ocpToken, _ := extractOCPToken(r)
+	ocpToken, ok := extractOCPToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
 	if errors.Is(err, credentials.ErrNoCredential) {

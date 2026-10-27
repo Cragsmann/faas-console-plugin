@@ -51,7 +51,11 @@ type funcYamlFields struct {
 }
 
 func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
-	ocpToken, _ := extractOCPToken(r)
+	ocpToken, ok := extractOCPToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
 	if err != nil {
