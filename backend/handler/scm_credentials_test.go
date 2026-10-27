@@ -12,8 +12,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/faas-console-plugin/backend/config"
 	"github.com/openshift/faas-console-plugin/backend/identity"
 	"github.com/openshift/faas-console-plugin/backend/scm"
+	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 )
 
 var _ = Describe("POST /api/v1/scm/github/credential", func() {
@@ -25,28 +27,63 @@ var _ = Describe("POST /api/v1/scm/github/credential", func() {
 		})
 	})
 
-	// Asserted through the store rather than on what the handler passed it: the
-	// credential it just wrote must be reachable by its owner and by nobody else.
-	It("binds the credential to the OpenShift user that stored it", func() {
-		h := resolvingTo(testOCPUser)
-		w := httptest.NewRecorder()
+	It("keeps each caller's saved GitHub account separate", func() {
+		original := config.SCMRegistry
+		config.SCMRegistry = scm.Registry{scm.GitHub: func(pat string) scm.Client {
+			return &scm.ClientStub{
+				OnGetUser: func(context.Context) (*scm.User, error) {
+					login := "alice-gh"
+					if pat == "bob-pat" {
+						login = "bob-gh"
+					}
+					return &scm.User{Login: login}, nil
+				},
+				OnGetFiles: func(_ context.Context, owner, _, _ string) ([]scm.FileEntry, error) {
+					if pat != owner+"-pat" {
+						return nil, scm.ErrUnauthorized
+					}
+					return []scm.FileEntry{{Path: "func.yaml", Content: "name: " + owner}}, nil
+				},
+			}
+		}}
+		DeferCleanup(func() { config.SCMRegistry = original })
+		h := &Handlers{scmCredentials: make(credentials.MapProvider)}
+		aliceRequest := saveTokenRequest("alice-pat")
+		aliceRequest.Header.Set("Authorization", "Bearer alice-ocp")
+		bobRequest := saveTokenRequest("bob-pat")
+		bobRequest.Header.Set("Authorization", "Bearer bob-ocp")
 
-		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
+		aliceResponse := httptest.NewRecorder()
+		h.HandleSaveSCMCredential(aliceResponse, aliceRequest)
+		Expect(aliceResponse.Code).To(Equal(http.StatusCreated))
+		bobResponse := httptest.NewRecorder()
+		h.HandleSaveSCMCredential(bobResponse, bobRequest)
+		Expect(bobResponse.Code).To(Equal(http.StatusCreated))
 
-		Expect(w.Code).To(Equal(http.StatusCreated))
+		expectAccount(h, "alice-ocp", "alice-gh")
+		expectAccount(h, "bob-ocp", "bob-gh")
+		for _, owner := range []string{"alice", "bob"} {
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/func/"+owner+"/fn/files", nil)
+			req.Header.Set("Authorization", "Bearer "+owner+"-ocp")
+			req.SetPathValue("owner", owner)
+			req.SetPathValue("name", "fn")
+			w := httptest.NewRecorder()
 
-		credential, err := h.scmCredentials.GetCredential(context.Background(), testOCPToken)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(credential.Token).To(Equal("ghp_valid"))
+			h.HandleGetFiles(w, req)
 
-		_, err = storeAs(mallory).GetCredential(context.Background(), testOCPToken)
-		Expect(err).To(HaveOccurred())
+			Expect(w.Code).To(Equal(http.StatusOK))
+			var files []scm.FileEntry
+			Expect(json.NewDecoder(w.Body).Decode(&files)).To(Succeed())
+			Expect(files).To(Equal([]scm.FileEntry{{Path: "func.yaml", Content: "name: " + owner}}))
+		}
 	})
 
 	It("returns the GitHub profile, never the token", func() {
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+
+		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		var resp map[string]string
 		Expect(json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
@@ -58,7 +95,9 @@ var _ = Describe("POST /api/v1/scm/github/credential", func() {
 	It("returns 400 when no token was sent", func() {
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleSaveSCMCredential(w, saveTokenRequest(""))
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+
+		h.HandleSaveSCMCredential(w, saveTokenRequest(""))
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -73,41 +112,38 @@ var _ = Describe("POST /api/v1/scm/github/credential", func() {
 		})
 		w := httptest.NewRecorder()
 
-		resolvingTo(testOCPUser).HandleSaveSCMCredential(w, saveTokenRequest("ghp_bad"))
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_bad"))
 
 		Expect(w.Code).To(Equal(http.StatusForbidden))
 		// A token GitHub refuses is never written, so the caller keeps whatever
 		// they already had rather than losing it to a typo.
-		Expect(credentialSecrets()).To(HaveLen(1))
+		expectAccount(h, testOCPToken, "tester")
 	})
 
 	It("returns 401 when the OpenShift token is rejected", func() {
-		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
+		h := failingCredentialHandler(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
 		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
-		// Nothing is stored for a caller with no identity to bind to, so the
-		// cluster still holds only the credential the test started with.
-		Expect(credentialSecrets()).To(HaveLen(1))
 	})
 
 	// Not 401: the API server being unreachable says nothing about the caller,
 	// and the frontend answers 401 by disconnecting. A blip must not cost the
 	// user a connection they still have.
 	It("returns 503 when the identity cannot be looked up at all", func() {
-		h := failingToResolve(errors.New("dial tcp: connection refused"))
+		h := failingCredentialHandler(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
 		h.HandleSaveSCMCredential(w, saveTokenRequest("ghp_valid"))
 
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
-		Expect(credentialSecrets()).To(HaveLen(1))
 	})
 
 	It("returns 401 when the console forwarded no user token", func() {
-		h := resolvingTo(testOCPUser)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
 		req := saveTokenRequest("ghp_valid")
 		req.Header.Del("Authorization")
 		w := httptest.NewRecorder()
@@ -128,7 +164,7 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 	// The whole point of keying on identity alone: a browser that has never
 	// seen this credential is connected by its OpenShift token and nothing else.
 	It("reports the GitHub account behind a stored credential", func() {
-		h := resolvingTo(testOCPUser)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
 		w := httptest.NewRecorder()
 
 		h.HandleGetSCMCredential(w, getRequest())
@@ -143,7 +179,7 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 	// The stored token answers requests on the backend; handing it back to the
 	// browser would undo the entire reason it lives in a Secret.
 	It("never returns the token itself", func() {
-		h := resolvingTo(testOCPUser)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
 		w := httptest.NewRecorder()
 
 		h.HandleGetSCMCredential(w, getRequest())
@@ -155,7 +191,7 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 	// known, they have simply never connected. The frontend reads 404 as "show
 	// the connect prompt" rather than "something went wrong".
 	It("returns 404 when the user has no stored credential", func() {
-		h := resolvingTo(mallory)
+		h := &Handlers{scmCredentials: make(credentials.MapProvider)}
 		w := httptest.NewRecorder()
 
 		h.HandleGetSCMCredential(w, getRequest())
@@ -164,7 +200,7 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 	})
 
 	It("returns 401 when the OpenShift token is rejected", func() {
-		h := failingToResolve(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
+		h := failingCredentialHandler(fmt.Errorf("%w: token rejected by the API server", identity.ErrUnauthenticated))
 		w := httptest.NewRecorder()
 
 		h.HandleGetSCMCredential(w, getRequest())
@@ -176,7 +212,7 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 	// the connect prompt. Being unable to read the credential is not the same
 	// as there not being one.
 	It("returns 503 when the identity cannot be looked up at all", func() {
-		h := failingToResolve(errors.New("dial tcp: connection refused"))
+		h := failingCredentialHandler(errors.New("dial tcp: connection refused"))
 		w := httptest.NewRecorder()
 
 		h.HandleGetSCMCredential(w, getRequest())
@@ -188,7 +224,7 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 var _ = Describe("DELETE /api/v1/scm/github/credential", func() {
 	DescribeTable("rejects requests without a usable bearer token",
 		func(authorization string) {
-			h := resolvingTo(testOCPUser)
+			h := &Handlers{scmCredentials: testCredentialProvider()}
 			req := httptest.NewRequest(http.MethodDelete, "/api/v1/scm/github/credential", nil)
 			req.Header.Set("Authorization", authorization)
 			w := httptest.NewRecorder()
@@ -196,7 +232,7 @@ var _ = Describe("DELETE /api/v1/scm/github/credential", func() {
 			h.HandleDeleteSCMCredential(w, req)
 
 			Expect(w.Code).To(Equal(http.StatusUnauthorized))
-			Expect(credentialSecrets()).To(HaveLen(1))
+			expectAccount(h, testOCPToken, "tester")
 		},
 		Entry("missing header", ""),
 		Entry("empty bearer token", "Bearer "),
@@ -210,60 +246,67 @@ var _ = Describe("DELETE /api/v1/scm/github/credential", func() {
 	}
 
 	It("deletes the credential of the user it belongs to", func() {
-		h := resolvingTo(testOCPUser)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
 		w := httptest.NewRecorder()
 
 		h.HandleDeleteSCMCredential(w, deleteRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(credentialSecrets()).To(BeEmpty())
+		Expect(credentialResponse(h, testOCPToken).Code).To(Equal(http.StatusNotFound))
 	})
 
 	// Revocation follows the identity. Reaching the backend as one user must
 	// not be a way to disconnect somebody else's GitHub account.
 	It("leaves another user's credential alone", func() {
-		h := resolvingTo(mallory)
+		provider := testCredentialProvider()
+		provider["other-ocp-token"] = credentials.Credential{Owner: "other-user", Token: "other-pat", Type: credentials.CredentialTypePAT}
+		h := &Handlers{scmCredentials: provider}
 		w := httptest.NewRecorder()
 
-		h.HandleDeleteSCMCredential(w, deleteRequest())
+		req := deleteRequest()
+		req.Header.Set("Authorization", "Bearer other-ocp-token")
+		h.HandleDeleteSCMCredential(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(credentialSecrets()).To(HaveLen(1))
+		Expect(credentialResponse(h, "other-ocp-token").Code).To(Equal(http.StatusNotFound))
+		expectAccount(h, testOCPToken, "tester")
 	})
 
-	It("returns 204 without touching the store when the user cannot be resolved", func() {
-		h := failingToResolve(errors.New("token rejected by the API server"))
+	It("returns 204 when the credential provider is unavailable", func() {
+		h := failingCredentialHandler(errors.New("token rejected by the API server"))
 		w := httptest.NewRecorder()
 
 		h.HandleDeleteSCMCredential(w, deleteRequest())
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
-		Expect(credentialSecrets()).To(HaveLen(1))
 	})
 })
 
-// mallory is a second OpenShift user, who has no credential of their own.
-var mallory = identity.User{Username: "mallory", UID: "mallory-uid"}
-
-// resolvingTo builds handlers whose requests authenticate as user.
-func resolvingTo(user identity.User) *Handlers {
-	return testHandlersResolving(Handlers{}, &identity.ResolverStub{
-		OnResolve: func(context.Context, string) (identity.User, error) { return user, nil },
-	})
+func failingCredentialHandler(cause error) *Handlers {
+	return &Handlers{scmCredentials: failingCredentialProvider(cause)}
 }
 
-// failingToResolve builds handlers that cannot identify their caller. The error
-// is the test's to choose: whether it wraps identity.ErrUnauthenticated is what
-// decides between blaming the caller and blaming the backend.
-func failingToResolve(cause error) *Handlers {
-	return testHandlersResolving(Handlers{}, &identity.ResolverStub{
-		OnResolve: func(context.Context, string) (identity.User, error) { return identity.User{}, cause },
-	})
+func credentialResponse(h *Handlers, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/scm/github/credential", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	h.HandleGetSCMCredential(w, req)
+	return w
+}
+
+func expectAccount(h *Handlers, token, login string) {
+	GinkgoHelper()
+	response := credentialResponse(h, token)
+	Expect(response.Code).To(Equal(http.StatusOK))
+	var account map[string]string
+	Expect(json.NewDecoder(response.Body).Decode(&account)).To(Succeed())
+	Expect(account["login"]).To(Equal(login))
 }
 
 func saveTokenRequest(pat string) *http.Request {
 	body, err := json.Marshal(map[string]string{"pat": pat})
 	Expect(err).NotTo(HaveOccurred())
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/scm/github/credential", bytes.NewBuffer(body))
-	return authenticate(req)
+	authenticate(req)
+	return req
 }

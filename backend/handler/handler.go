@@ -12,11 +12,11 @@ import (
 )
 
 type Handlers struct {
-	caCert               []byte             // cluster CA certificate, read once at startup
-	kubeHost             string             // API server URL for dev/test; empty uses in-cluster config
-	externalAPIServerURL string             // external URL embedded in generated kubeconfigs
-	saTokenExpiry        int64              // requested SA token lifetime in seconds
-	scmCredentials       *credentials.Store // SCM credentials, resolved from the console's bearer token
+	caCert               []byte               // cluster CA certificate, read once at startup
+	kubeHost             string               // API server URL for dev/test; empty uses in-cluster config
+	externalAPIServerURL string               // external URL embedded in generated kubeconfigs
+	saTokenExpiry        int64                // requested SA token lifetime in seconds
+	scmCredentials       credentials.Provider // SCM credentials, resolved from the console's bearer token
 }
 
 type httpError struct {
@@ -37,7 +37,7 @@ func newHTTPError(code int, message string, cause error) error {
 	return &httpError{code: code, message: message, cause: cause}
 }
 
-func New(caCert []byte, kubeHost, externalAPIServerURL string, saTokenExpiry int64, scmCredentials *credentials.Store) *Handlers {
+func New(caCert []byte, kubeHost, externalAPIServerURL string, saTokenExpiry int64, scmCredentials credentials.Provider) *Handlers {
 	return &Handlers{
 		caCert:               caCert,
 		kubeHost:             kubeHost,

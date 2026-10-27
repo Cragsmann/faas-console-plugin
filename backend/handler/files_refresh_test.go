@@ -36,10 +36,11 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files - credential refresh", f
 		return req
 	}
 	newHandlers := func() *Handlers {
-		return testHandlers(Handlers{
+		return &Handlers{
 			externalAPIServerURL: "https://api.test-cluster.example.com:6443",
 			saTokenExpiry:        config.DefaultSATokenExpiry,
-		})
+			scmCredentials:       testCredentialProvider(),
+		}
 	}
 
 	const funcYaml = "name: my-func\nnamespace: demo\nruntime: go\n"

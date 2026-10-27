@@ -227,13 +227,15 @@ Test double stubs live next to their interfaces:
 
 ### Backend Test Double Strategy
 
-Two strategies depending on the package under test:
+Choose test doubles at the package boundary:
 
-**Interface-level stubs** (handler tests) - `scm.ClientStub`, `cluster.ClientStub`, and `functions.ClientStub` implement their respective interfaces with function fields. Each test sets only the fields it exercises; unset fields return happy-path defaults. `withSCMStub` swaps `config.SCMRegistry`, `withClusterStub` swaps `newClusterClient`, and `withFunctionsClient` swaps `newFunctionsClient` for the duration of the test. No `httptest.NewServer`, no real HTTP client stack - handler tests verify request parsing, error mapping, and response codes only.
+**Interface-level stubs** (handler tests) - `scm.ClientStub`, `cluster.ClientStub`, and `functions.ClientStub` implement their respective interfaces with function fields. Each test sets only the fields it exercises; unset fields return happy-path defaults. `withSCMStub` swaps `config.SCMRegistry`, `withClusterStub` swaps `newClusterClient`, and `withFunctionsClient` swaps `newFunctionsClient` for the duration of the test. Most handler tests call handlers directly to verify request parsing, error mapping, and response codes; workflow watch tests also use `httptest.NewServer` to verify streaming over HTTP.
+
+**Credential providers** (handler tests): inject a fresh `credentials.MapProvider` into each handler for successful operations or a `credentials.ProviderStub` for failures. Assert returned account data, HTTP statuses, and SSE events rather than Secret counts or captured calls. Store tests exercise identity binding and expiry with a fake Kubernetes client; handler tests do not inspect that storage.
 
 **`fake.NewSimpleClientset`** (cluster package tests) - `k8s.io/client-go/kubernetes/fake` implements `kubernetes.Interface` without any HTTP. Use reactors to simulate errors and pre-populate objects to simulate existing state. This is the client-go idiomatic approach.
 
-Tests live in the same package as the code (`package handler`, `package cluster`) for white-box access. Each package has a `suite_test.go` that registers the Ginkgo runner.
+Most tests live in the same package as the code (`package handler`, `package cluster`); workflow watch tests use `package handler_test` and exercise the exported handler over HTTP and SSE. Each package has a `suite_test.go` that registers the Ginkgo runner.
 
 ### Spec Pattern
 

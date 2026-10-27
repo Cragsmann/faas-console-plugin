@@ -32,7 +32,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		Expect(gotOwner).To(Equal("alice"))
@@ -61,7 +62,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		Expect(gotRef).To(Equal("develop"))
@@ -72,7 +74,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
@@ -83,7 +86,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "../evil")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -94,7 +98,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "../evil")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -105,7 +110,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -122,7 +128,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusForbidden))
 	})
@@ -139,7 +146,8 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandleGetFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadGateway))
 	})
@@ -180,7 +188,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"})).HandlePutFiles(w, req)
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
 		Expect(gotOwner).To(Equal("alice"))
@@ -196,7 +205,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})
@@ -212,7 +222,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "../evil")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -228,7 +239,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "../evil")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -240,7 +252,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -256,7 +269,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -267,7 +281,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -283,7 +298,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -295,7 +311,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{})).HandlePutFiles(w, req)
+		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
@@ -313,7 +330,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"})).HandlePutFiles(w, req)
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusForbidden))
 	})
@@ -331,7 +349,8 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		req.SetPathValue("owner", "alice")
 		req.SetPathValue("name", "my-func")
 		w := httptest.NewRecorder()
-		(testHandlers(Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"})).HandlePutFiles(w, req)
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
+		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadGateway))
 	})
