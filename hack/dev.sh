@@ -139,7 +139,7 @@ backend_gh_flag() {
   fi
 }
 
-ensure_session_namespace() {
+ensure_credential_namespace() {
   # The backend puts SCM credential Secrets in the namespace it runs in, which
   # it reads from its ServiceAccount in the pod and falls back to this name off
   # cluster, where there is no pod to ask. It is not configurable from here.
@@ -329,7 +329,7 @@ main() {
   install_dependencies
   stop_dev
   resolve_kube_api_server
-  ensure_session_namespace
+  ensure_credential_namespace
   write_dev_env
   extract_cluster_ca
   trap 'stop_dev' EXIT INT TERM
