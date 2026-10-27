@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -56,18 +57,18 @@ type secretData struct {
 }
 
 func NewStore(cfg *rest.Config, namespace string, resolver identity.Resolver) (*Store, error) {
-	if namespace == "" {
-		return nil, fmt.Errorf("credential namespace is required")
-	}
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes client: %w", err)
 	}
-	return NewStoreWithClient(client, namespace, resolver), nil
+	return NewStoreWithClient(client, namespace, resolver)
 }
 
-func NewStoreWithClient(client kubernetes.Interface, namespace string, resolver identity.Resolver) *Store {
-	return &Store{client: client, namespace: namespace, resolver: resolver}
+func NewStoreWithClient(client kubernetes.Interface, namespace string, resolver identity.Resolver) (*Store, error) {
+	if namespace == "" {
+		return nil, fmt.Errorf("credential namespace is required")
+	}
+	return &Store{client: client, namespace: namespace, resolver: resolver}, nil
 }
 
 // resolveUser turns the console's bearer token into the user it belongs to.
@@ -195,13 +196,21 @@ func (s *Store) write(ctx context.Context, user identity.User, data secretData) 
 	}
 
 	secrets := s.client.CoreV1().Secrets(s.namespace)
-	if _, err := secrets.Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+	err = retry.OnError(retry.DefaultRetry, apierrors.IsNotFound, func() error {
+		_, err := secrets.Create(ctx, secret, metav1.CreateOptions{})
+		if err == nil {
+			return nil
+		}
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("create secret: %w", err)
 		}
 		if _, err := secrets.Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
 			return fmt.Errorf("update secret: %w", err)
 		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("write credential secret: %w", err)
 	}
 	return nil
 }

@@ -5,12 +5,8 @@ package identity
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/openshift/faas-console-plugin/backend/kube"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -38,34 +34,18 @@ type Resolver interface {
 	ResolveUserIdentity(ctx context.Context, token string) (User, error)
 }
 
-// users OCP identity is cached for 1 hour
-const cacheTTL = time.Hour
-
 func NewResolver(host string, caCert []byte) Resolver {
-	return &reviewResolver{host: host, caCert: caCert, entries: map[string]cacheEntry{}}
+	return &reviewResolver{host: host, caCert: caCert}
 }
 
 type reviewResolver struct {
 	host   string
 	caCert []byte
-
-	mu      sync.Mutex
-	entries map[string]cacheEntry
-}
-
-type cacheEntry struct {
-	user      User
-	expiresAt time.Time
 }
 
 func (r *reviewResolver) ResolveUserIdentity(ctx context.Context, token string) (User, error) {
 	if token == "" {
 		return User{}, fmt.Errorf("%w: no bearer token", ErrUnauthenticated)
-	}
-
-	key := cacheKey(token)
-	if user, ok := r.lookup(key); ok {
-		return user, nil
 	}
 
 	cfg, err := kube.UserConfig(r.host, token, r.caCert)
@@ -92,41 +72,7 @@ func (r *reviewResolver) ResolveUserIdentity(ctx context.Context, token string) 
 		return User{}, fmt.Errorf("%w: self subject review returned no username", ErrUnauthenticated)
 	}
 
-	r.store(key, user)
 	return user, nil
-}
-
-// cacheKey hashes the token so it is never held in a map key that could end up
-// in a heap dump or a debug print.
-func cacheKey(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
-func (r *reviewResolver) lookup(key string) (User, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	entry, ok := r.entries[key]
-	if !ok || time.Now().After(entry.expiresAt) {
-		return User{}, false
-	}
-	return entry.user, true
-}
-
-func (r *reviewResolver) store(key string, user User) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Nothing ever removes an entry explicitly, so drop the stale ones here
-	now := time.Now()
-	for k, entry := range r.entries {
-		if now.After(entry.expiresAt) {
-			delete(r.entries, k)
-		}
-	}
-
-	r.entries[key] = cacheEntry{user: user, expiresAt: now.Add(cacheTTL)}
 }
 
 // ResolverStub is a test double. It resolves every token to the same user

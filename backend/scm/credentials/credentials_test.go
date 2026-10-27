@@ -13,7 +13,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
+	ktesting "k8s.io/client-go/testing"
 )
 
 const testNamespace = "console-functions-plugin"
@@ -56,7 +59,10 @@ var _ = Describe("Store", func() {
 	)
 
 	newTestStore := func(objects ...runtime.Object) *Store {
-		return NewStoreWithClient(fake.NewClientset(objects...), testNamespace, tokenResolver())
+		GinkgoHelper()
+		store, err := NewStoreWithClient(fake.NewClientset(objects...), testNamespace, tokenResolver())
+		Expect(err).NotTo(HaveOccurred())
+		return store
 	}
 
 	BeforeEach(func() {
@@ -65,6 +71,27 @@ var _ = Describe("Store", func() {
 	})
 
 	Describe("Save", func() {
+		It("saves the credential when its Secret is deleted during a reconnect", func() {
+			client := fake.NewClientset(secretFor(alice))
+			var err error
+			store, err = NewStoreWithClient(client, testNamespace, tokenResolver())
+			Expect(err).NotTo(HaveOccurred())
+			client.PrependReactor("update", "secrets", func(action ktesting.Action) (bool, runtime.Object, error) {
+				err := client.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("secrets"), testNamespace, secretName(alice))
+				if err != nil {
+					return true, nil, err
+				}
+				return true, nil, apierrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, secretName(alice))
+			})
+			rotated := Credential{Owner: "alice-gh", Token: "ghp_rotated", Type: CredentialTypePAT}
+
+			Expect(store.SaveCredential(ctx, aliceToken, rotated)).To(Succeed())
+
+			credential, err := store.GetCredential(ctx, aliceToken)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(credential).To(Equal(rotated))
+		})
+
 		It("stores the secret in the configured namespace", func() {
 			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
 
@@ -221,9 +248,15 @@ var _ = Describe("Store", func() {
 })
 
 var _ = Describe("NewStore", func() {
+	It("rejects an empty namespace when a client is supplied directly", func() {
+		store, err := NewStoreWithClient(fake.NewClientset(), "", tokenResolver())
+		Expect(err).To(MatchError("credential namespace is required"))
+		Expect(store).To(BeNil())
+	})
+
 	It("rejects an empty namespace", func() {
-		_, err := NewStore(nil, "", tokenResolver())
-		Expect(err).To(HaveOccurred())
+		_, err := NewStore(&rest.Config{}, "", tokenResolver())
+		Expect(err).To(MatchError("credential namespace is required"))
 	})
 })
 

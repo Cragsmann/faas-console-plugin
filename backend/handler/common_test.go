@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/openshift/faas-console-plugin/backend/cluster"
 	"github.com/openshift/faas-console-plugin/backend/config"
@@ -58,13 +59,15 @@ func testHandlers(h Handlers) *Handlers {
 // testHandlersResolving is how a test plays a different user, or none: the
 // resolver now belongs to the store rather than to the handlers.
 func testHandlersResolving(h Handlers, resolver identity.Resolver) *Handlers {
+	GinkgoHelper()
 	// A cluster of its own per call, so one spec revoking a credential cannot
 	// change what the next one sees.
 	credentialCluster = fake.NewClientset()
-	seed := credentials.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
+	seed, err := credentials.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
 		OnResolve: func(context.Context, string) (identity.User, error) { return testOCPUser, nil },
 	})
-	err := seed.SaveCredential(context.Background(), testOCPToken, credentials.Credential{
+	Expect(err).NotTo(HaveOccurred())
+	err = seed.SaveCredential(context.Background(), testOCPToken, credentials.Credential{
 		Owner: "tester",
 		Token: "test-pat",
 		Type:  credentials.CredentialTypePAT,
@@ -73,7 +76,8 @@ func testHandlersResolving(h Handlers, resolver identity.Resolver) *Handlers {
 		panic(fmt.Sprintf("seed test credential: %v", err))
 	}
 
-	h.scmCredentials = credentials.NewStoreWithClient(credentialCluster, testNamespace, resolver)
+	h.scmCredentials, err = credentials.NewStoreWithClient(credentialCluster, testNamespace, resolver)
+	Expect(err).NotTo(HaveOccurred())
 	return &h
 }
 
@@ -81,9 +85,12 @@ func testHandlersResolving(h Handlers, resolver identity.Resolver) *Handlers {
 // every token to user. It is how a spec checks a credential is not reachable
 // by somebody else.
 func storeAs(user identity.User) *credentials.Store {
-	return credentials.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
+	GinkgoHelper()
+	store, err := credentials.NewStoreWithClient(credentialCluster, testNamespace, &identity.ResolverStub{
 		OnResolve: func(context.Context, string) (identity.User, error) { return user, nil },
 	})
+	Expect(err).NotTo(HaveOccurred())
+	return store
 }
 
 // authenticate marks req as coming through the console proxy, which forwards

@@ -93,7 +93,11 @@ func (h *Handlers) HandleGetSCMCredential(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handlers) HandleDeleteSCMCredential(w http.ResponseWriter, r *http.Request) {
-	ocpToken, _ := extractOCPToken(r)
+	ocpToken, ok := extractOCPToken(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	// Nothing to revoke if the caller cannot be identified. The browser
 	// disconnects regardless, so this is not worth failing the request over.

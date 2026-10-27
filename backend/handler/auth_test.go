@@ -186,6 +186,23 @@ var _ = Describe("GET /api/v1/scm/github/credential", func() {
 })
 
 var _ = Describe("DELETE /api/v1/scm/github/credential", func() {
+	DescribeTable("rejects requests without a usable bearer token",
+		func(authorization string) {
+			h := resolvingTo(testOCPUser)
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/scm/github/credential", nil)
+			req.Header.Set("Authorization", authorization)
+			w := httptest.NewRecorder()
+
+			h.HandleDeleteSCMCredential(w, req)
+
+			Expect(w.Code).To(Equal(http.StatusUnauthorized))
+			Expect(credentialSecrets()).To(HaveLen(1))
+		},
+		Entry("missing header", ""),
+		Entry("empty bearer token", "Bearer "),
+		Entry("wrong authentication scheme", "Basic credentials"),
+	)
+
 	deleteRequest := func() *http.Request {
 		req := httptest.NewRequest(http.MethodDelete, "/api/v1/scm/github/credential", nil)
 		authenticate(req)

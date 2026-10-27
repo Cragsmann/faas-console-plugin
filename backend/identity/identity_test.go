@@ -2,10 +2,15 @@ package identity
 
 import (
 	"context"
-	"time"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("User.Matches", func() {
@@ -39,63 +44,39 @@ var _ = Describe("User.Matches", func() {
 })
 
 var _ = Describe("Resolve", func() {
+	It("rejects a previously accepted token after the API server revokes it", func() {
+		var revoked atomic.Bool
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if revoked.Load() {
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(metav1.Status{
+					Status: metav1.StatusFailure, Reason: metav1.StatusReasonUnauthorized, Code: http.StatusUnauthorized,
+				})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(authenticationv1.SelfSubjectReview{
+				Status: authenticationv1.SelfSubjectReviewStatus{
+					UserInfo: authenticationv1.UserInfo{Username: "alice", UID: "uid-1"},
+				},
+			})
+		}))
+		DeferCleanup(server.Close)
+		resolver := NewResolver(server.URL, nil)
+
+		user, err := resolver.ResolveUserIdentity(context.Background(), "console-token")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(user).To(Equal(User{Username: "alice", UID: "uid-1"}))
+
+		revoked.Store(true)
+		_, err = resolver.ResolveUserIdentity(context.Background(), "console-token")
+		Expect(err).To(MatchError(ErrUnauthenticated))
+	})
+
 	It("rejects an empty token instead of calling the API server", func() {
 		resolver := NewResolver("https://api.example.com:6443", nil)
 
 		_, err := resolver.ResolveUserIdentity(context.Background(), "")
 		Expect(err).To(MatchError(ErrUnauthenticated))
-	})
-
-	// A cached answer must be served without a second API server call, and must
-	// stop being served once it expires. Asserted against the map directly: the
-	// resolver has no seam for faking SelfSubjectReview, so a live call is the
-	// only alternative and there is no cluster in a unit test.
-	It("serves cached answers until they expire", func() {
-		r := &reviewResolver{entries: map[string]cacheEntry{}}
-		const token = "sha256~console-token"
-		alice := User{Username: "alice", UID: "uid-1"}
-
-		r.store(cacheKey(token), alice)
-
-		user, err := r.ResolveUserIdentity(context.Background(), token)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(user).To(Equal(alice))
-
-		// Past the TTL the entry is ignored, so Resolve falls through to the API
-		// server and fails for want of one rather than serving the stale answer.
-		r.entries[cacheKey(token)] = cacheEntry{user: alice, expiresAt: time.Now().Add(-time.Second)}
-		_, err = r.ResolveUserIdentity(context.Background(), token)
-		Expect(err).To(HaveOccurred(), "Resolve should not serve an expired entry")
-	})
-})
-
-var _ = Describe("cacheKey", func() {
-	const token = "sha256~secret-console-token"
-
-	It("hides the token", func() {
-		Expect(cacheKey(token)).NotTo(Equal(token))
-	})
-
-	It("is stable for the same token", func() {
-		Expect(cacheKey(token)).To(Equal(cacheKey(token)))
-	})
-
-	It("differs for different tokens", func() {
-		Expect(cacheKey(token)).NotTo(Equal(cacheKey(token + "x")))
-	})
-})
-
-// Expired entries are dropped on write, or the map grows with every console
-// token the backend has ever seen.
-var _ = Describe("store", func() {
-	It("prunes expired entries and keeps the new one", func() {
-		r := &reviewResolver{entries: map[string]cacheEntry{
-			"stale": {user: User{Username: "bob"}, expiresAt: time.Now().Add(-time.Second)},
-		}}
-
-		r.store("fresh", User{Username: "alice"})
-
-		Expect(r.entries).NotTo(HaveKey("stale"))
-		Expect(r.entries).To(HaveKey("fresh"))
 	})
 })
