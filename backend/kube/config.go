@@ -60,9 +60,7 @@ func UserConfig(host, token string, caCert []byte) (*rest.Config, error) {
 }
 
 // ComponentConfig talks to the cluster as the backend itself, for work that is
-// not done on a caller's behalf. Whether that means a mounted ServiceAccount
-// token or a kubeconfig is detected rather than configured: a flag saying
-// which to use is one more thing that can disagree with reality.
+// not done on a caller's behalf. Using local kubeconfig when not in-cluster.
 func ComponentConfig() (*rest.Config, error) {
 	cfg, err := rest.InClusterConfig()
 	if errors.Is(err, rest.ErrNotInCluster) {
