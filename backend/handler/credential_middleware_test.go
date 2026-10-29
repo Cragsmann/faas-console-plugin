@@ -15,13 +15,12 @@ import (
 var _ = Describe("credential middleware", func() {
 	DescribeTable("rejects missing or malformed bearer authentication",
 		func(authorization string) {
-			h := &Handlers{scmCredentials: withCredentialProviderError(errors.New("cluster unavailable"))}
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/func/list", nil)
 			req.Header.Set("Authorization", authorization)
 			w := httptest.NewRecorder()
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
-			h.RequireCredential(next).ServeHTTP(w, req)
+			RequireCredential(next, withCredentialProviderError(errors.New("cluster unavailable"))).ServeHTTP(w, req)
 
 			Expect(w.Code).To(Equal(http.StatusUnauthorized))
 			Expect(w.Body.String()).To(MatchJSON(`{"message":"authentication required"}`))
@@ -32,7 +31,6 @@ var _ = Describe("credential middleware", func() {
 	)
 
 	It("makes the stored credential and caller token available to the next handler", func() {
-		h := &Handlers{scmCredentials: withCredentialProviderStub()}
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/func/list", nil)
 		authenticate(req)
 		w := httptest.NewRecorder()
@@ -41,7 +39,7 @@ var _ = Describe("credential middleware", func() {
 			writeJSON(w, http.StatusOK, map[string]string{"scmToken": credential.Token, "ocpToken": credential.ocpToken})
 		})
 
-		h.RequireCredential(next).ServeHTTP(w, req)
+		RequireCredential(next, withCredentialProviderStub()).ServeHTTP(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		Expect(w.Body.String()).To(MatchJSON(`{"scmToken":"test-pat","ocpToken":"ocp-token"}`))
@@ -49,13 +47,12 @@ var _ = Describe("credential middleware", func() {
 
 	DescribeTable("reports credential lookup failures before entering the next handler",
 		func(cause error, code int, path string) {
-			h := &Handlers{scmCredentials: withCredentialProviderError(cause)}
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 			authenticate(req)
 			w := httptest.NewRecorder()
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
-			h.RequireCredential(next).ServeHTTP(w, req)
+			RequireCredential(next, withCredentialProviderError(cause)).ServeHTTP(w, req)
 
 			Expect(w.Code).To(Equal(code))
 		},
@@ -68,13 +65,12 @@ var _ = Describe("credential middleware", func() {
 	)
 
 	It("rejects callers who have no credential even when another caller is connected", func() {
-		h := &Handlers{scmCredentials: credentials.MapProvider{"other-token": {Token: "other-pat"}}}
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/func/list", nil)
 		authenticate(req)
 		w := httptest.NewRecorder()
 		next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
-		h.RequireCredential(next).ServeHTTP(w, req)
+		RequireCredential(next, credentials.MapProvider{"other-token": {Token: "other-pat"}}).ServeHTTP(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusUnauthorized))
 	})

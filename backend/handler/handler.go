@@ -55,14 +55,14 @@ type requestCredential struct {
 	ocpToken string
 }
 
-func (h *Handlers) RequireCredential(next http.Handler) http.Handler {
+func RequireCredential(next http.Handler, scmCredentials credentials.Provider) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ocpToken, ok := extractOCPToken(r)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
+		credential, err := scmCredentials.Get(r.Context(), ocpToken)
 		if err != nil {
 			// Reading the connection state distinguishes an unconnected caller
 			// from failed authentication; other protected routes require a credential.

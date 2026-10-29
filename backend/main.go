@@ -131,7 +131,7 @@ func main() {
 	}
 }
 
-func newMux(h *handler.Handlers, scmCredentials handler.CredentialProvider, static fs.FS) *http.ServeMux {
+func newMux(h *handler.Handlers, scmCredentials credentials.Provider, static fs.FS) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
 	mux.HandleFunc("POST /api/v1/scm/github/credential", h.HandleSaveSCMCredential)
@@ -145,7 +145,7 @@ func newMux(h *handler.Handlers, scmCredentials handler.CredentialProvider, stat
 	protected.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
 	protected.HandleFunc("PUT /api/v1/func/{owner}/{name}/files", h.HandlePutFiles)
 	protected.HandleFunc("POST /api/v1/func/create", h.HandleFuncCreate)
-	mux.Handle("/api/v1/", h.RequireCredential(protected))
+	mux.Handle("/api/v1/", handler.RequireCredential(protected, scmCredentials))
 	return mux
 }
 
