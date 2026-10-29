@@ -18,17 +18,7 @@ import (
 var validGitRef = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._/-]*[a-zA-Z0-9])?$`)
 
 func (h *Handlers) HandleGetFiles(w http.ResponseWriter, r *http.Request) {
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
-	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
-	if err != nil {
-		writeAuthError(w, err)
-		return
-	}
+	credential := credentialFrom(r.Context())
 
 	owner := r.PathValue("owner")
 	name := r.PathValue("name")
@@ -75,17 +65,7 @@ type putFilesTarget struct {
 }
 
 func (h *Handlers) HandlePutFiles(w http.ResponseWriter, r *http.Request) {
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
-	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
-	if err != nil {
-		writeAuthError(w, err)
-		return
-	}
+	credential := credentialFrom(r.Context())
 
 	owner := r.PathValue("owner")
 	name := r.PathValue("name")
@@ -157,10 +137,7 @@ func (h *Handlers) refreshKubeconfig(r *http.Request, client scm.Client, target 
 		return nil
 	}
 
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		return newHTTPError(http.StatusUnauthorized, "Authorization header is required", nil)
-	}
+	ocpToken := credentialFrom(r.Context()).ocpToken
 
 	funcYaml, err := client.GetFileContent(r.Context(), target.owner, target.repo, target.branch, "func.yaml")
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 
@@ -14,6 +15,13 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/cluster"
 	"github.com/openshift/faas-console-plugin/backend/scm"
 )
+
+func filesRequest(method, owner, name, query string, body io.Reader) *http.Request {
+	req := httptest.NewRequestWithContext(testCredentialContext(), method, "/api/v1/func/"+owner+"/"+name+"/files"+query, body)
+	req.SetPathValue("owner", owner)
+	req.SetPathValue("name", name)
+	return req
+}
 
 var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 	It("returns all files from the repository using HEAD as the default ref", func() {
@@ -27,12 +35,9 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/my-func/files", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodGet, "alice", "my-func", "", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusOK))
@@ -57,60 +62,37 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/my-func/files?ref=develop", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodGet, "alice", "my-func", "?ref=develop", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusOK))
 		Expect(gotRef).To(Equal("develop"))
 	})
 
-	It("rejects requests without a session header", func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/my-func/files", nil)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
-		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
-		h.HandleGetFiles(w, req)
-
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
-	})
-
 	It("rejects requests with an invalid owner", func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/../evil/files", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "../evil")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodGet, "../evil", "my-func", "", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
 
 	It("rejects requests with an invalid repo name", func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/../evil/files", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "../evil")
+		req := filesRequest(http.MethodGet, "alice", "../evil", "", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
 
 	It("rejects requests with an invalid ref parameter", func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/my-func/files?ref=HEAD%3Fevil%3D1", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodGet, "alice", "my-func", "?ref=HEAD%3Fevil%3D1", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -123,12 +105,9 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/my-func/files", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodGet, "alice", "my-func", "", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusForbidden))
@@ -141,12 +120,9 @@ var _ = Describe("GET /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/func/alice/my-func/files", nil)
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodGet, "alice", "my-func", "", nil)
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandleGetFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadGateway))
@@ -183,12 +159,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(validPutBody()))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(validPutBody()))
 		w := httptest.NewRecorder()
-		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusNoContent))
@@ -200,29 +173,15 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 		Expect(gotFiles[0].Path).To(Equal("func.go"))
 	})
 
-	It("rejects requests without a session header", func() {
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", nil)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
-		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
-		h.HandlePutFiles(w, req)
-
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
-	})
-
 	It("rejects requests with an invalid owner", func() {
 		body, _ := json.Marshal(putFilesRequest{
 			Files:   []scm.FileEntry{{Path: "f.go", Mode: "100644", Content: "x", Type: "blob"}},
 			Message: "update",
 			Branch:  "main",
 		})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/../evil/my-func/files", bytes.NewBuffer(body))
-		authenticate(req)
-		req.SetPathValue("owner", "../evil")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "../evil", "my-func", "", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -234,12 +193,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 			Message: "update",
 			Branch:  "main",
 		})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/../evil/files", bytes.NewBuffer(body))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "../evil")
+		req := filesRequest(http.MethodPut, "alice", "../evil", "", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -247,12 +203,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 
 	It("rejects requests with an empty file list", func() {
 		body, _ := json.Marshal(putFilesRequest{Files: []scm.FileEntry{}, Message: "update", Branch: "main"})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(body))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -264,24 +217,18 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 			Message: "update",
 			Branch:  "",
 		})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(body))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
 	})
 
 	It("rejects a malformed request body", func() {
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBufferString("not json"))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBufferString("not json"))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -293,12 +240,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 			Message: "update",
 			Branch:  "refs/heads/main",
 		})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(body))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -306,12 +250,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 
 	It("rejects requests without a commit message", func() {
 		body, _ := json.Marshal(putFilesRequest{Files: []scm.FileEntry{{Path: "f.go", Mode: "100644", Content: "x", Type: "blob"}}, Branch: "main"})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(body))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(body))
 		w := httptest.NewRecorder()
-		h := &Handlers{scmCredentials: testCredentialProvider()}
+		h := &Handlers{}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadRequest))
@@ -325,12 +266,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(validPutBody()))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(validPutBody()))
 		w := httptest.NewRecorder()
-		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusForbidden))
@@ -344,12 +282,9 @@ var _ = Describe("PUT /api/v1/func/{owner}/{name}/files", func() {
 			},
 		})
 
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/func/alice/my-func/files", bytes.NewBuffer(validPutBody()))
-		authenticate(req)
-		req.SetPathValue("owner", "alice")
-		req.SetPathValue("name", "my-func")
+		req := filesRequest(http.MethodPut, "alice", "my-func", "", bytes.NewBuffer(validPutBody()))
 		w := httptest.NewRecorder()
-		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"}
 		h.HandlePutFiles(w, req)
 
 		Expect(w.Code).To(Equal(http.StatusBadGateway))

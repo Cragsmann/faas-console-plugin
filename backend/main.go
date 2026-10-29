@@ -89,17 +89,7 @@ func main() {
 
 	h := handler.New(caCert, *kubeHost, *kubeAPIServer, saTokenExpiryParsed, scmCredentials)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", h.HandleHealthz)
-	mux.HandleFunc("POST /api/v1/scm/github/credential", h.HandleSaveSCMCredential)
-	mux.HandleFunc("GET /api/v1/scm/github/credential", h.HandleGetSCMCredential)
-	mux.HandleFunc("DELETE /api/v1/scm/github/credential", h.HandleDeleteSCMCredential)
-	mux.HandleFunc("GET /api/v1/func/list", h.HandleListFunctions)
-	mux.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
-	mux.HandleFunc("PUT /api/v1/func/{owner}/{name}/files", h.HandlePutFiles)
-	mux.HandleFunc("POST /api/v1/func/create", h.HandleFuncCreate)
-	mux.HandleFunc("GET /api/v1/func/workflow-run/watch", handler.WorkflowRunWatch(handler.WithCredentialsProvider(scmCredentials)))
-	mux.Handle("/", http.FileServer(http.FS(static)))
+	mux := newMux(h, scmCredentials, static)
 
 	muxHandler := loggingMiddleware(mux)
 
@@ -139,6 +129,24 @@ func main() {
 		log.Printf("TLS certificate not found, listening on http://%s", ln.Addr())
 		log.Fatal(http.Serve(ln, muxHandler))
 	}
+}
+
+func newMux(h *handler.Handlers, scmCredentials handler.CredentialProvider, static fs.FS) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", h.HandleHealthz)
+	mux.HandleFunc("POST /api/v1/scm/github/credential", h.HandleSaveSCMCredential)
+	mux.HandleFunc("DELETE /api/v1/scm/github/credential", h.HandleDeleteSCMCredential)
+	mux.HandleFunc("GET /api/v1/func/workflow-run/watch", handler.WorkflowRunWatch(handler.WithCredentialsProvider(scmCredentials)))
+	mux.Handle("/", http.FileServer(http.FS(static)))
+
+	protected := http.NewServeMux()
+	protected.HandleFunc("GET /api/v1/scm/github/credential", h.HandleGetSCMCredential)
+	protected.HandleFunc("GET /api/v1/func/list", h.HandleListFunctions)
+	protected.HandleFunc("GET /api/v1/func/{owner}/{name}/files", h.HandleGetFiles)
+	protected.HandleFunc("PUT /api/v1/func/{owner}/{name}/files", h.HandlePutFiles)
+	protected.HandleFunc("POST /api/v1/func/create", h.HandleFuncCreate)
+	mux.Handle("/api/v1/", h.RequireCredential(protected))
+	return mux
 }
 
 func readCACert(path string) ([]byte, error) {

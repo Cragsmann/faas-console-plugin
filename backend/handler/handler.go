@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -45,6 +46,42 @@ func New(caCert []byte, kubeHost, externalAPIServerURL string, saTokenExpiry int
 		saTokenExpiry:        saTokenExpiry,
 		scmCredentials:       scmCredentials,
 	}
+}
+
+type credentialKey struct{}
+
+type requestCredential struct {
+	credentials.Credential
+	ocpToken string
+}
+
+func (h *Handlers) RequireCredential(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ocpToken, ok := extractOCPToken(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
+		if err != nil {
+			// Reading the connection state distinguishes an unconnected caller
+			// from failed authentication; other protected routes require a credential.
+			if errors.Is(err, credentials.ErrNoCredential) &&
+				(r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+				r.URL.Path == "/api/v1/scm/github/credential" {
+				writeError(w, http.StatusNotFound, "no stored credential")
+				return
+			}
+			writeAuthError(w, err)
+			return
+		}
+		ctx := context.WithValue(r.Context(), credentialKey{}, requestCredential{Credential: credential, ocpToken: ocpToken})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func credentialFrom(ctx context.Context) requestCredential {
+	return ctx.Value(credentialKey{}).(requestCredential)
 }
 
 func extractOCPToken(r *http.Request) (string, bool) {

@@ -51,17 +51,7 @@ type funcYamlFields struct {
 }
 
 func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
-	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
-	if err != nil {
-		writeAuthError(w, err)
-		return
-	}
+	credential := credentialFrom(r.Context())
 
 	all := r.URL.Query().Get("all") == "true"
 	namespace := r.URL.Query().Get("namespace")
@@ -85,11 +75,11 @@ func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		repoFunctions, repoErr = h.listRepoFunctions(r.Context(), credential.Token, ocpToken, namespace)
+		repoFunctions, repoErr = h.listRepoFunctions(r.Context(), credential.Token, credential.ocpToken, namespace)
 	}()
 	go func() {
 		defer wg.Done()
-		clusterFunctions, clusterErr = h.listClusterFunctions(r.Context(), ocpToken, namespace)
+		clusterFunctions, clusterErr = h.listClusterFunctions(r.Context(), credential.ocpToken, namespace)
 	}()
 	wg.Wait()
 

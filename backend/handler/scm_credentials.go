@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/openshift/faas-console-plugin/backend/config"
-	"github.com/openshift/faas-console-plugin/backend/identity"
 	"github.com/openshift/faas-console-plugin/backend/scm"
 	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 )
@@ -72,27 +71,7 @@ func (h *Handlers) HandleSaveSCMCredential(w http.ResponseWriter, r *http.Reques
 // HandleGetSCMCredential answers with the credential's public representation:
 // which SCM account it belongs to, never the token itself.
 func (h *Handlers) HandleGetSCMCredential(w http.ResponseWriter, r *http.Request) {
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
-	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
-	if errors.Is(err, credentials.ErrNoCredential) {
-		writeError(w, http.StatusNotFound, "no stored credential")
-		return
-	}
-	if err != nil {
-		if errors.Is(err, identity.ErrUnauthenticated) {
-			writeAuthError(w, err)
-			return
-		}
-		slog.Error("failed to read the stored credential", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "credential store unavailable")
-		return
-	}
-
+	credential := credentialFrom(r.Context())
 	writeJSON(w, http.StatusOK, githubAccount(credential.Owner, credential.AvatarURL))
 }
 

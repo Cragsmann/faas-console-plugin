@@ -15,19 +15,26 @@ import (
 
 const testOCPToken = "ocp-token"
 
-func testCredentialProvider() credentials.MapProvider {
+func testCredentialContext() context.Context {
+	return context.WithValue(context.Background(), credentialKey{}, requestCredential{
+		Credential: credentials.Credential{Owner: "tester", Token: "test-pat", Type: credentials.CredentialTypePAT},
+		ocpToken:   testOCPToken,
+	})
+}
+
+func withCredentialProviderStub() credentials.MapProvider {
 	return credentials.MapProvider{
 		testOCPToken: {Owner: "tester", Token: "test-pat", Type: credentials.CredentialTypePAT},
 	}
 }
 
-func failingCredentialProvider(cause error) credentials.Provider {
+func withCredentialProviderError(err error) credentials.Provider {
 	return credentials.ProviderStub{
-		OnSave: func(context.Context, string, credentials.Credential) error { return cause },
+		OnSave: func(context.Context, string, credentials.Credential) error { return err },
 		OnGet: func(context.Context, string) (credentials.Credential, error) {
-			return credentials.Credential{}, cause
+			return credentials.Credential{}, err
 		},
-		OnDelete: func(context.Context, string) error { return cause },
+		OnDelete: func(context.Context, string) error { return err },
 	}
 }
 

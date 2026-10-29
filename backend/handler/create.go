@@ -50,11 +50,7 @@ type createRequest struct {
 var errUpstream = errors.New("upstream error")
 
 func (h *Handlers) HandleFuncCreate(w http.ResponseWriter, r *http.Request) {
-	ocpToken, ok := extractOCPToken(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
+	credential := credentialFrom(r.Context())
 
 	var req createRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
@@ -67,13 +63,7 @@ func (h *Handlers) HandleFuncCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
-	if err != nil {
-		writeAuthError(w, err)
-		return
-	}
-
-	if err := h.createFunction(r.Context(), req, credential.Token, ocpToken); err != nil {
+	if err := h.createFunction(r.Context(), req, credential.Token, credential.ocpToken); err != nil {
 		switch {
 		case errors.Is(err, scm.ErrUnauthorized):
 			writeError(w, http.StatusForbidden, "invalid SCM token")

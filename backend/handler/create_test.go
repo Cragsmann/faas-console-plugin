@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -15,10 +16,13 @@ import (
 	"github.com/openshift/faas-console-plugin/backend/cluster"
 	"github.com/openshift/faas-console-plugin/backend/functions"
 	"github.com/openshift/faas-console-plugin/backend/scm"
-	"github.com/openshift/faas-console-plugin/backend/scm/credentials"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func createFunctionRequest(body io.Reader) *http.Request {
+	return httptest.NewRequestWithContext(testCredentialContext(), http.MethodPost, "/api/v1/func/create", body)
+}
 
 var _ = Describe("POST /api/v1/func/create", func() {
 	validBody := func() []byte {
@@ -36,9 +40,9 @@ var _ = Describe("POST /api/v1/func/create", func() {
 
 	doCreate := func(setup func()) *httptest.ResponseRecorder {
 		setup()
-		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443", scmCredentials: testCredentialProvider()}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
-		authenticate(req)
+		h := &Handlers{externalAPIServerURL: "https://api.test-cluster.example.com:6443"}
+		req := createFunctionRequest(bytes.NewBuffer(validBody()))
+
 		w := httptest.NewRecorder()
 		h.HandleFuncCreate(w, req)
 		return w
@@ -92,10 +96,9 @@ var _ = Describe("POST /api/v1/func/create", func() {
 		h := &Handlers{
 			externalAPIServerURL: "https://api.test-cluster.example.com:6443",
 			saTokenExpiry:        7 * 24 * 60 * 60,
-			scmCredentials:       testCredentialProvider(),
 		}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
-		authenticate(req)
+		req := createFunctionRequest(bytes.NewBuffer(validBody()))
+
 		w := httptest.NewRecorder()
 
 		h.HandleFuncCreate(w, req)
@@ -207,43 +210,10 @@ var _ = Describe("POST /api/v1/func/create", func() {
 		}, http.StatusBadGateway),
 	)
 
-	It("rejects requests from a user with no stored credential", func() {
-		h := &Handlers{scmCredentials: make(credentials.MapProvider)}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
-		authenticate(req)
-		w := httptest.NewRecorder()
-		h.HandleFuncCreate(w, req)
-
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
-	})
-
-	It("rejects requests without an Authorization header", func() {
-		h := &Handlers{scmCredentials: testCredentialProvider()}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
-		authenticate(req)
-		req.Header.Del("Authorization")
-		w := httptest.NewRecorder()
-		h.HandleFuncCreate(w, req)
-
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
-	})
-
-	It("rejects requests when only another caller has a stored credential", func() {
-		h := &Handlers{scmCredentials: credentials.MapProvider{
-			"other-ocp-token": {Owner: "other-user", Token: "other-pat", Type: credentials.CredentialTypePAT},
-		}}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(validBody()))
-		authenticate(req)
-		w := httptest.NewRecorder()
-		h.HandleFuncCreate(w, req)
-
-		Expect(w.Code).To(Equal(http.StatusUnauthorized))
-	})
-
 	It("returns 400 for a malformed request body", func() {
-		h := &Handlers{scmCredentials: testCredentialProvider()}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBufferString("not json"))
-		authenticate(req)
+		h := &Handlers{}
+		req := createFunctionRequest(bytes.NewBufferString("not json"))
+
 		w := httptest.NewRecorder()
 		h.HandleFuncCreate(w, req)
 
@@ -252,10 +222,10 @@ var _ = Describe("POST /api/v1/func/create", func() {
 
 	DescribeTable("rejects invalid function configurations",
 		func(req createRequest) {
-			h := &Handlers{scmCredentials: testCredentialProvider()}
+			h := &Handlers{}
 			body, _ := json.Marshal(req)
-			r := httptest.NewRequest(http.MethodPost, "/api/v1/func/create", bytes.NewBuffer(body))
-			authenticate(r)
+			r := createFunctionRequest(bytes.NewBuffer(body))
+
 			w := httptest.NewRecorder()
 			h.HandleFuncCreate(w, r)
 			Expect(w.Code).To(Equal(http.StatusBadRequest))
