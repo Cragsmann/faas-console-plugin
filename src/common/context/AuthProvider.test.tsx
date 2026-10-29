@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { useContext } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { AuthContext, AuthProvider } from './AuthProvider';
@@ -9,6 +10,8 @@ import {
   fetchGithubUserStub,
   noGithubUserStub,
 } from '../testing/authClientStub';
+import { BACKEND_API } from '../testing/constants';
+import { server } from '../testing/mswServer';
 
 const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
 
@@ -21,9 +24,25 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
   consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
 }));
 
+const CREDENTIAL_URL = `${BACKEND_API}/api/v1/scm/github/credential`;
+
 function ConnectionState() {
   const { isAuthenticated, user } = useContext(AuthContext);
-  return <div>{isAuthenticated ? `connected as ${user?.name}` : 'not connected'}</div>;
+  return (
+    <>
+      <div>{isAuthenticated ? `connected as ${user?.name}` : 'not connected'}</div>
+      <div>{user === null ? 'user is null' : 'user is present'}</div>
+    </>
+  );
+}
+
+function LoginButton() {
+  const { onLogin } = useContext(AuthContext);
+  return (
+    <button onClick={() => onLogin({ name: 'twoGiants', avatarUrl: 'https://valid.url' })}>
+      Log in
+    </button>
+  );
 }
 
 function LogoutButton() {
@@ -37,6 +56,8 @@ function renderProvider() {
     <MemoryRouter>
       <AuthProvider>
         <ConnectionState />
+        <LoginButton />
+        <LogoutButton />
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -95,6 +116,76 @@ describe('AuthProvider', () => {
     });
 
     await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
+  });
+
+  it('exposes a null user while disconnected', async () => {
+    noGithubUserStub();
+
+    renderProvider();
+
+    expect(await screen.findByText('user is null')).toBeInTheDocument();
+  });
+
+  it('connects a user who logs in by hand', async () => {
+    noGithubUserStub();
+
+    renderProvider();
+    expect(await screen.findByText('not connected')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+  });
+
+  it('disconnects and revokes the stored credential on logout', async () => {
+    fetchGithubUserStub();
+    let revoked = false;
+    server.use(
+      http.delete(CREDENTIAL_URL, () => {
+        revoked = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    renderProvider();
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+
+    expect(await screen.findByText('not connected')).toBeInTheDocument();
+    // The backend DELETE must finish before the UI drops the connection.
+    expect(revoked).toBe(true);
+  });
+
+  it('shows the expiry warning after the credential expires', async () => {
+    fetchGithubUserStub();
+
+    renderProvider();
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    });
+
+    expect(await screen.findByText(/session has expired/)).toBeInTheDocument();
+    expect(screen.getByText('not connected')).toBeInTheDocument();
+  });
+
+  it('clears the expiry warning once the user reconnects', async () => {
+    fetchGithubUserStub();
+
+    renderProvider();
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    });
+    expect(await screen.findByText(/session has expired/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+    expect(screen.queryByText(/session has expired/)).not.toBeInTheDocument();
   });
 
   it('navigates to the functions list after logout', async () => {
