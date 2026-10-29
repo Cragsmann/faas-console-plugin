@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse, delay } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { UserAvatar } from './UserAvatar';
 import { AuthContext } from '../context/AuthProvider';
 import { ReactNode } from 'react';
@@ -253,12 +253,7 @@ describe('UserAvatar', () => {
 
     it('disables Cancel button while validating', async () => {
       const user = userEvent.setup();
-      server.use(
-        http.post(CREDENTIAL_URL, async () => {
-          await delay('infinite');
-          return HttpResponse.json({ login: 'twoGiants', avatarUrl: '' });
-        }),
-      );
+      connectGithubUserStub({ wait: new Promise(() => {}) });
 
       renderWithContext(<UserAvatar />);
 

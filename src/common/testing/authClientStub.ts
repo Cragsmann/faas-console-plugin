@@ -13,22 +13,44 @@ type ErrorResponse = { message: string; status: number };
 export function connectGithubUserStub({
   response = CONNECTED_ACCOUNT,
   errorResponse,
-}: { response?: Account; errorResponse?: ErrorResponse } = {}) {
-  server.use(http.post(CREDENTIAL_URL, () => reply(response, errorResponse)));
+  wait,
+}: {
+  response?: Account;
+  errorResponse?: ErrorResponse;
+  wait?: Promise<void>;
+} = {}) {
+  server.use(
+    http.post(CREDENTIAL_URL, async () => {
+      if (errorResponse?.message && errorResponse?.status)
+        return HttpResponse.json(
+          { message: errorResponse?.message },
+          { status: errorResponse.status },
+        );
+
+      if (wait) await wait;
+
+      return HttpResponse.json(response);
+    }),
+  );
 }
 
-// connectionStub answers the GET the UI makes on mount. Omit the response to
-// play a user who has never connected, which is the 404 the backend sends.
+// connectionStub answers the GET the UI makes on mount.
 export function fetchGithubUserStub({
   response = CONNECTED_ACCOUNT,
   errorResponse,
-}: { response?: Account | null; errorResponse?: ErrorResponse } = {}) {
+}: {
+  response?: Account;
+  errorResponse?: ErrorResponse;
+} = {}) {
   server.use(
     http.get(CREDENTIAL_URL, () => {
-      if (!response && !errorResponse) {
-        return HttpResponse.json({ message: 'no stored credential' }, { status: 404 });
-      }
-      return reply(response as Account, errorResponse);
+      if (errorResponse?.message && errorResponse?.status)
+        return HttpResponse.json(
+          { message: errorResponse?.message },
+          { status: errorResponse.status },
+        );
+
+      return HttpResponse.json(response);
     }),
   );
 }
@@ -36,7 +58,11 @@ export function fetchGithubUserStub({
 // noConnectionStub plays a user with nothing stored, so the UI should prompt
 // for a PAT rather than connect them.
 export function noGithubUserStub() {
-  fetchGithubUserStub({ response: null });
+  server.use(
+    http.get(CREDENTIAL_URL, () =>
+      HttpResponse.json({ message: 'no stored credential' }, { status: 404 }),
+    ),
+  );
 }
 
 export function disconnectGithubUserStub({
@@ -44,20 +70,13 @@ export function disconnectGithubUserStub({
 }: { errorResponse?: ErrorResponse } = {}) {
   server.use(
     http.delete(CREDENTIAL_URL, () => {
-      if (errorResponse) {
+      if (errorResponse?.message && errorResponse?.status)
         return HttpResponse.json(
-          { message: errorResponse.message },
+          { message: errorResponse?.message },
           { status: errorResponse.status },
         );
-      }
+
       return new HttpResponse(null, { status: 204 });
     }),
   );
-}
-
-function reply(response: Account, errorResponse?: ErrorResponse) {
-  if (errorResponse) {
-    return HttpResponse.json({ message: errorResponse.message }, { status: errorResponse.status });
-  }
-  return HttpResponse.json(response);
 }
