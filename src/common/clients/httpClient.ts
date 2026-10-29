@@ -22,7 +22,8 @@ async function announcingAuthExpired<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();
   } catch (err) {
-    if (statusOf(err) === 401) window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    if (statusOf(err) === 401 || statusOf(err) === 403)
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
     throw err;
   }
 }
