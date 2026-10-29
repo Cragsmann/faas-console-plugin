@@ -16,14 +16,14 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('../clients/httpClient', () => ({
-  customFetch: sdkTestDoubles.customFetchStub,
-  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
+vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
 }));
 
 function ConnectionState() {
   const { isAuthenticated, user } = useContext(AuthContext);
-  return <div>{isAuthenticated ? `connected as ${user.name}` : 'not connected'}</div>;
+  return <div>{isAuthenticated ? `connected as ${user?.name}` : 'not connected'}</div>;
 }
 
 function LogoutButton() {
@@ -43,8 +43,8 @@ function renderProvider() {
 }
 
 describe('AuthProvider', () => {
-  // The fix this whole change is for: a user whose PAT is already in a Secret
-  // opens the console and is connected, having typed nothing.
+  // A user whose PAT is already in a Secret opens the console and
+  // is connected, having typed nothing.
   it('connects a user whose credential the backend already holds', async () => {
     fetchGithubUserStub();
 

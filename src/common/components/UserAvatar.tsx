@@ -35,7 +35,9 @@ export function UserAvatar() {
     useUserAvatar();
 
   if (isAuthenticated) {
-    return <ConnectedMenu name={user.name} avatarUrl={user.avatarUrl} onDisconnect={disconnect} />;
+    return (
+      <ConnectedMenu name={user?.name} avatarUrl={user?.avatarUrl} onDisconnect={disconnect} />
+    );
   }
 
   return (
@@ -70,12 +72,12 @@ function useUserAvatar() {
 }
 
 interface ConnectedMenuProps {
-  name: string;
-  avatarUrl: string;
+  name: string | undefined;
+  avatarUrl: string | undefined;
   onDisconnect: () => Promise<void>;
 }
 
-function ConnectedMenu({ name, avatarUrl, onDisconnect }: ConnectedMenuProps) {
+function ConnectedMenu({ name = '', avatarUrl = '', onDisconnect }: ConnectedMenuProps) {
   const { t } = useTranslation('plugin__console-functions-plugin');
   const [isOpen, setIsOpen] = useState(false);
 

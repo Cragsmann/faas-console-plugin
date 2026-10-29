@@ -146,7 +146,7 @@ function useFunctionListPage(): {
 
   const { functions, loaded, refreshing, errors } = useFunctions(
     namespace,
-    isAuthenticated ? user.name : undefined,
+    isAuthenticated ? user?.name : undefined,
     refreshKey,
   );
 

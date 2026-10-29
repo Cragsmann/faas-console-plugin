@@ -16,6 +16,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
   DocumentTitle: ({ children }: { children: string }) => children,
   ListPageHeader: ({ title, children }: { title: string; children?: React.ReactNode }) => (
     <>
@@ -24,11 +26,6 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     </>
   ),
   useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
-}));
-
-vi.mock('../../common/clients/httpClient', () => ({
-  customFetch: sdkTestDoubles.customFetchStub,
-  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
 vi.mock('react-router', async (importOriginal) => ({

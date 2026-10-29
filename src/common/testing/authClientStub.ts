@@ -4,7 +4,7 @@ import { server } from './mswServer';
 
 const CREDENTIAL_URL = `${BACKEND_API}/api/v1/scm/github/credential`;
 
-export const CONNECTED_ACCOUNT = { login: 'twoGiants', avatarUrl: 'https://valid.url' };
+const CONNECTED_ACCOUNT = { login: 'twoGiants', avatarUrl: 'https://valid.url' };
 
 type Account = { login: string; avatarUrl: string };
 type ErrorResponse = { message: string; status: number };

@@ -25,6 +25,8 @@ let mockOnChange: ((value: string) => void) | undefined;
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
   return {
+    consoleFetch: sdkTestDoubles.consoleFetchStub,
+    consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
     DocumentTitle: ({ children }: { children: string }) => children,
     ListPageHeader: ({ title }: { title: string }) => title,
     CodeEditor: ({
@@ -52,11 +54,6 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => {
     isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
   };
 });
-
-vi.mock('../../common/clients/httpClient', () => ({
-  customFetch: sdkTestDoubles.customFetchStub,
-  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
-}));
 
 function renderEditPage(name: string) {
   return render(

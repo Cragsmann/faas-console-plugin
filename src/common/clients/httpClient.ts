@@ -1,5 +1,6 @@
 import { consoleFetch, consoleFetchJSON } from '@openshift-console/dynamic-plugin-sdk';
 import { AUTH_EXPIRED_EVENT } from '../types';
+import { resolveErrorStatus } from '../utils/utils';
 
 export function customFetch(
   url: string,
@@ -22,7 +23,7 @@ async function announcingAuthExpired<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();
   } catch (err) {
-    if (statusOf(err) === 401 || statusOf(err) === 403)
+    if (resolveErrorStatus(err) === 401 || resolveErrorStatus(err) === 403)
       window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
     throw err;
   }
@@ -30,9 +31,4 @@ async function announcingAuthExpired<T>(attempt: () => Promise<T>): Promise<T> {
 
 function plain(headers?: HeadersInit): Record<string, string> {
   return Object.fromEntries(new Headers(headers || {}).entries());
-}
-
-function statusOf(err: unknown): number | undefined {
-  const e = err as { status?: number; response?: { status?: number } };
-  return e?.status ?? e?.response?.status;
 }

@@ -29,6 +29,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+  consoleFetch: sdkTestDoubles.consoleFetchStub,
+  consoleFetchJSON: sdkTestDoubles.consoleFetchJSONStub,
   NamespaceBar: () => null,
   DocumentTitle: ({ children }: { children: string }) => children,
   ListPageHeader: ({ title, children }: { title: string; children?: React.ReactNode }) => (
@@ -45,11 +47,6 @@ vi.mock('@openshift-console/dynamic-plugin-sdk', () => ({
   useK8sWatchResource: sdkTestDoubles.useK8sWatchResourceStub,
   useActiveNamespace: sdkTestDoubles.useActiveNamespaceStub,
   isAllNamespacesKey: sdkTestDoubles.isAllNamespaceKeyFake,
-}));
-
-vi.mock('../../common/clients/httpClient', () => ({
-  customFetch: sdkTestDoubles.customFetchStub,
-  customFetchJSON: sdkTestDoubles.customFetchJSONStub,
 }));
 
 describe('FunctionsListPage', () => {
@@ -249,7 +246,7 @@ describe('FunctionsListPage', () => {
     });
 
     it('shows error alert when listing functions fails', async () => {
-      listFunctionsStub({ errorResponse: { message: 'Bad credentials', status: 403 } });
+      listFunctionsStub({ errorResponse: { message: 'Failed to list functions', status: 500 } });
 
       render(
         <MemoryRouter>
@@ -257,7 +254,7 @@ describe('FunctionsListPage', () => {
         </MemoryRouter>,
       );
 
-      expect(await screen.findByText(/Bad credentials/)).toBeInTheDocument();
+      expect(await screen.findByText(/Failed to list functions/)).toBeInTheDocument();
     });
 
     it('resets functions when user reconnects', async () => {

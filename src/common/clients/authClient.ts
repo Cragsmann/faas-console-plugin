@@ -1,5 +1,6 @@
-import { customFetch, customFetchJSON } from './httpClient';
 import { AuthUser, PROXY_BASE } from '../types';
+import { resolveErrorStatus } from '../utils/utils';
+import { customFetch, customFetchJSON } from './httpClient';
 
 export { customFetch, customFetchJSON } from './httpClient';
 
@@ -25,7 +26,7 @@ export async function fetchGithubUser(): Promise<AuthUser | null> {
     const account = await customFetchJSON<AccountResponse>(CREDENTIAL_URL);
     return toUser(account);
   } catch (err) {
-    if (statusOf(err) !== 404) throw err;
+    if (resolveErrorStatus(err) !== 404) throw err;
     return null;
   }
 }
@@ -41,9 +42,4 @@ export async function disconnectGithubUser(): Promise<void> {
 
 function toUser({ login, avatarUrl }: AccountResponse): AuthUser {
   return { name: login, avatarUrl };
-}
-
-function statusOf(err: unknown): number | undefined {
-  const e = err as { status?: number; response?: { status?: number } };
-  return e?.status ?? e?.response?.status;
 }

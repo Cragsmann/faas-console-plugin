@@ -4,18 +4,16 @@ import { useNavigate } from 'react-router';
 import { disconnectGithubUser, fetchGithubUser } from '../clients/authClient';
 import { AUTH_EXPIRED_EVENT, AuthUser } from '../types';
 
-const NO_USER: AuthUser = { name: '', avatarUrl: '' };
-
 interface AuthState {
   isAuthenticated: boolean;
-  user: AuthUser;
+  user: AuthUser | null;
   onLogin: (user: AuthUser) => void;
   onLogout: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthState>({
   isAuthenticated: false,
-  user: NO_USER,
+  user: null,
   onLogin: () => {},
   onLogout: async () => {},
 });
@@ -44,16 +42,17 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchGithubUser()
-      .then((connected) => {
+    (async () => {
+      try {
+        const connected = await fetchGithubUser();
         if (cancelled) return;
         if (connected) onLogin(connected);
         else setAuthUser(null);
-      })
-      .catch(() => {
+      } catch {
         // Stay disconnected: the user can still connect by hand.
         if (!cancelled) setAuthUser(null);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -76,7 +75,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     <AuthContext.Provider
       value={{
         isAuthenticated: Boolean(authUser),
-        user: authUser ?? NO_USER,
+        user: authUser ?? null,
         onLogin,
         onLogout,
       }}
