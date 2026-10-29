@@ -48,12 +48,12 @@ type Store struct {
 }
 
 type secretData struct {
-	Credential string        `json:"credential"`
-	Type       string        `json:"type"`  // CredentialTypePAT or CredentialTypeOAuth
-	Owner      string        `json:"owner"` // GitHub username or other identifier
-	AvatarURL  string        `json:"avatarUrl,omitempty"`
-	User       identity.User `json:"user"`
-	ExpiresAt  time.Time     `json:"expiresAt"`
+	Token     string        `json:"token"`
+	Type      string        `json:"type"`  // CredentialTypePAT or CredentialTypeOAuth
+	Owner     string        `json:"owner"` // SCM username or other identifier
+	AvatarURL string        `json:"avatarUrl,omitempty"`
+	User      identity.User `json:"user"`
+	ExpiresAt time.Time     `json:"expiresAt"`
 }
 
 func NewStore(cfg *rest.Config, namespace string, resolver identity.Resolver) (*Store, error) {
@@ -71,53 +71,53 @@ func NewStoreWithClient(client kubernetes.Interface, namespace string, resolver 
 	return &Store{client: client, namespace: namespace, resolver: resolver}, nil
 }
 
-func (s *Store) SaveCredential(ctx context.Context, ocpToken string, cred Credential) error {
+func (s *Store) Save(ctx context.Context, ocpToken string, cred Credential) error {
 	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
 		return fmt.Errorf("save credential: resolve OpenShift user: %w", err)
 	}
-	return s.write(ctx, user, secretData{
-		Credential: cred.Token,
-		Type:       cred.Type,
-		Owner:      cred.Owner,
-		AvatarURL:  cred.AvatarURL,
-		User:       user,
-		ExpiresAt:  time.Now().Add(credentialTTL),
+	return s.writeSecret(ctx, user, secretData{
+		Token:     cred.Token,
+		Type:      cred.Type,
+		Owner:     cred.Owner,
+		AvatarURL: cred.AvatarURL,
+		User:      user,
+		ExpiresAt: time.Now().Add(credentialTTL),
 	})
 }
 
-func (s *Store) GetCredential(ctx context.Context, ocpToken string) (Credential, error) {
+func (s *Store) Get(ctx context.Context, ocpToken string) (Credential, error) {
 	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
 		return Credential{}, fmt.Errorf("get credential: resolve OpenShift user: %w", err)
 	}
 
-	data, err := s.read(ctx, user)
+	data, err := s.readSecret(ctx, user)
 	if err != nil {
 		return Credential{}, err
 	}
-	if err := s.dropIfExpired(ctx, user, data); err != nil {
+	if err := s.dropSecretIfExpired(ctx, user, data); err != nil {
 		return Credential{}, err
 	}
 
 	return Credential{
 		Owner:     data.Owner,
 		AvatarURL: data.AvatarURL,
-		Token:     data.Credential,
+		Token:     data.Token,
 		Type:      data.Type,
 	}, nil
 }
 
-func (s *Store) DeleteCredential(ctx context.Context, ocpToken string) error {
+func (s *Store) Delete(ctx context.Context, ocpToken string) error {
 	user, err := s.resolver.ResolveUserIdentity(ctx, ocpToken)
 	if err != nil {
 		return fmt.Errorf("delete credential: resolve OpenShift user: %w", err)
 	}
 
-	return s.deleteFor(ctx, user)
+	return s.deleteSecret(ctx, user)
 }
 
-func (s *Store) deleteFor(ctx context.Context, user identity.User) error {
+func (s *Store) deleteSecret(ctx context.Context, user identity.User) error {
 	err := s.client.CoreV1().Secrets(s.namespace).Delete(ctx, secretName(user), metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete credential secret: %w", err)
@@ -125,7 +125,7 @@ func (s *Store) deleteFor(ctx context.Context, user identity.User) error {
 	return nil
 }
 
-func (s *Store) read(ctx context.Context, user identity.User) (secretData, error) {
+func (s *Store) readSecret(ctx context.Context, user identity.User) (secretData, error) {
 	secret, err := s.client.CoreV1().Secrets(s.namespace).Get(ctx, secretName(user), metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -154,17 +154,17 @@ func (s *Store) read(ctx context.Context, user identity.User) (secretData, error
 	return data, nil
 }
 
-func (s *Store) dropIfExpired(ctx context.Context, user identity.User, data secretData) error {
+func (s *Store) dropSecretIfExpired(ctx context.Context, user identity.User, data secretData) error {
 	if !time.Now().After(data.ExpiresAt) {
 		return nil
 	}
-	if err := s.deleteFor(ctx, user); err != nil {
+	if err := s.deleteSecret(ctx, user); err != nil {
 		slog.Error("failed to delete expired credential", "err", err)
 	}
 	return ErrNoCredential
 }
 
-func (s *Store) write(ctx context.Context, user identity.User, data secretData) error {
+func (s *Store) writeSecret(ctx context.Context, user identity.User, data secretData) error {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal secret data: %w", err)

@@ -57,7 +57,7 @@ func (h *Handlers) HandleListFunctions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
+	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
 	if err != nil {
 		writeAuthError(w, err)
 		return

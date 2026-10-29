@@ -85,15 +85,15 @@ var _ = Describe("Store", func() {
 			})
 			rotated := Credential{Owner: "alice-gh", Token: "ghp_rotated", Type: CredentialTypePAT}
 
-			Expect(store.SaveCredential(ctx, aliceToken, rotated)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, rotated)).To(Succeed())
 
-			credential, err := store.GetCredential(ctx, aliceToken)
+			credential, err := store.Get(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential).To(Equal(rotated))
 		})
 
 		It("stores the secret in the configured namespace", func() {
-			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, alicePAT)).To(Succeed())
 
 			secret, err := store.client.CoreV1().Secrets(testNamespace).Get(ctx, secretName(alice), metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
@@ -106,7 +106,7 @@ var _ = Describe("Store", func() {
 		// holds and whose account it is without trying it.
 		It("records the credential type and owner", func() {
 			oauth := Credential{Owner: "alice-gh", Token: "gho_secret", Type: CredentialTypeOAuth}
-			Expect(store.SaveCredential(ctx, aliceToken, oauth)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, oauth)).To(Succeed())
 
 			data := readSecretData(store, alice)
 			Expect(data.Type).To(Equal(CredentialTypeOAuth))
@@ -117,26 +117,26 @@ var _ = Describe("Store", func() {
 		// Without a user to bind to there is nothing to key the Secret by, so
 		// a token the cluster will not identify must not store anything.
 		It("refuses a token the cluster does not recognise", func() {
-			Expect(store.SaveCredential(ctx, "not-a-token", alicePAT)).To(MatchError(identity.ErrUnauthenticated))
+			Expect(store.Save(ctx, "not-a-token", alicePAT)).To(MatchError(identity.ErrUnauthenticated))
 		})
 
 		It("refuses a request carrying no token at all", func() {
-			Expect(store.SaveCredential(ctx, "", alicePAT)).To(MatchError(identity.ErrUnauthenticated))
+			Expect(store.Save(ctx, "", alicePAT)).To(MatchError(identity.ErrUnauthenticated))
 		})
 
 		// Reconnecting must not orphan the previous Secret: it would still hold
 		// a live PAT and nothing would ever delete it.
 		It("replaces an existing credential rather than adding another", func() {
-			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, alicePAT)).To(Succeed())
 
 			rotated := Credential{Owner: "alice-gh", Token: "ghp_rotated", Type: CredentialTypePAT}
-			Expect(store.SaveCredential(ctx, aliceToken, rotated)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, rotated)).To(Succeed())
 
 			secrets, err := store.client.CoreV1().Secrets(testNamespace).List(ctx, metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(secrets.Items).To(HaveLen(1), "a user should own one secret")
 
-			credential, err := store.GetCredential(ctx, aliceToken)
+			credential, err := store.Get(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential.Token).To(Equal("ghp_rotated"))
 		})
@@ -144,9 +144,9 @@ var _ = Describe("Store", func() {
 
 	Describe("Get", func() {
 		It("returns the stored credential", func() {
-			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, alicePAT)).To(Succeed())
 
-			credential, err := store.GetCredential(ctx, aliceToken)
+			credential, err := store.Get(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential.Token).To(Equal("ghp_secret"))
 		})
@@ -155,9 +155,9 @@ var _ = Describe("Store", func() {
 		// trying it, which is the whole reason this returns a Credential rather
 		// than the bare string it holds.
 		It("returns the type and owner alongside the secret", func() {
-			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, alicePAT)).To(Succeed())
 
-			credential, err := store.GetCredential(ctx, aliceToken)
+			credential, err := store.Get(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(credential.Type).To(Equal(CredentialTypePAT))
 			Expect(credential.Owner).To(Equal("alice-gh"))
@@ -165,7 +165,7 @@ var _ = Describe("Store", func() {
 		})
 
 		It("reports ErrNoCredential for a user with nothing stored", func() {
-			_, err := store.GetCredential(ctx, aliceToken)
+			_, err := store.Get(ctx, aliceToken)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 
@@ -176,7 +176,7 @@ var _ = Describe("Store", func() {
 		It("refuses a credential bound to a different OpenShift user", func() {
 			store = newTestStore(secretAt(mallory, alice))
 
-			_, err := store.GetCredential(ctx, malloryToken)
+			_, err := store.Get(ctx, malloryToken)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 
@@ -184,12 +184,12 @@ var _ = Describe("Store", func() {
 			store = newTestStore(secretFor(alice))
 
 			// mallory hashes to a different Secret name, so this is the ordinary miss.
-			_, err := store.GetCredential(ctx, malloryToken)
+			_, err := store.Get(ctx, malloryToken)
 			Expect(err).To(MatchError(ErrNoCredential))
 
 			// The rightful owner keeps the credential: a failed read by somebody
 			// else must not cost them their connection.
-			_, err = store.GetCredential(ctx, aliceToken)
+			_, err = store.Get(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred(), "owner should still reach their credential")
 		})
 
@@ -198,7 +198,7 @@ var _ = Describe("Store", func() {
 				d.ExpiresAt = time.Now().Add(-time.Minute)
 			}))
 
-			_, err := store.GetCredential(ctx, aliceToken)
+			_, err := store.Get(ctx, aliceToken)
 			Expect(err).To(MatchError(ErrNoCredential))
 
 			_, err = store.client.CoreV1().Secrets(testNamespace).Get(ctx, secretName(alice), metav1.GetOptions{})
@@ -213,25 +213,25 @@ var _ = Describe("Store", func() {
 			stale.Data = map[string][]byte{"session": stale.Data[secretDataKey]}
 			store = newTestStore(stale)
 
-			_, err := store.GetCredential(ctx, aliceToken)
+			_, err := store.Get(ctx, aliceToken)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 	})
 
 	Describe("Delete", func() {
 		It("removes the secret", func() {
-			Expect(store.SaveCredential(ctx, aliceToken, alicePAT)).To(Succeed())
+			Expect(store.Save(ctx, aliceToken, alicePAT)).To(Succeed())
 
-			Expect(store.DeleteCredential(ctx, aliceToken)).To(Succeed())
+			Expect(store.Delete(ctx, aliceToken)).To(Succeed())
 
-			_, err := store.GetCredential(ctx, aliceToken)
+			_, err := store.Get(ctx, aliceToken)
 			Expect(err).To(MatchError(ErrNoCredential))
 		})
 
 		// Disconnecting is something the browser does on its way out; failing it
 		// because there was nothing to delete would only produce noise.
 		It("succeeds when there is nothing to delete", func() {
-			Expect(store.DeleteCredential(ctx, aliceToken)).To(Succeed())
+			Expect(store.Delete(ctx, aliceToken)).To(Succeed())
 		})
 
 		// Revocation follows the identity, so one user disconnecting must not
@@ -239,9 +239,9 @@ var _ = Describe("Store", func() {
 		It("leaves another user's credential alone", func() {
 			store = newTestStore(secretFor(alice))
 
-			Expect(store.DeleteCredential(ctx, malloryToken)).To(Succeed())
+			Expect(store.Delete(ctx, malloryToken)).To(Succeed())
 
-			_, err := store.GetCredential(ctx, aliceToken)
+			_, err := store.Get(ctx, aliceToken)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -309,12 +309,12 @@ func secretFor(user identity.User, mutators ...func(*secretData)) *corev1.Secret
 // which is how a test separates "where the Secret was found" from "whose it is".
 func secretAt(name, boundTo identity.User, mutators ...func(*secretData)) *corev1.Secret {
 	d := secretData{
-		Credential: "ghp_secret",
-		Type:       CredentialTypePAT,
-		Owner:      "alice-gh",
-		AvatarURL:  "https://avatars/alice",
-		User:       boundTo,
-		ExpiresAt:  time.Now().Add(credentialTTL),
+		Token:     "ghp_secret",
+		Type:      CredentialTypePAT,
+		Owner:     "alice-gh",
+		AvatarURL: "https://avatars/alice",
+		User:      boundTo,
+		ExpiresAt: time.Now().Add(credentialTTL),
 	}
 	for _, mutate := range mutators {
 		mutate(&d)

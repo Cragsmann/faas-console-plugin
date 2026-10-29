@@ -23,11 +23,11 @@ func testCredentialProvider() credentials.MapProvider {
 
 func failingCredentialProvider(cause error) credentials.Provider {
 	return credentials.ProviderStub{
-		OnSaveCredential: func(context.Context, string, credentials.Credential) error { return cause },
-		OnGetCredential: func(context.Context, string) (credentials.Credential, error) {
+		OnSave: func(context.Context, string, credentials.Credential) error { return cause },
+		OnGet: func(context.Context, string) (credentials.Credential, error) {
 			return credentials.Credential{}, cause
 		},
-		OnDeleteCredential: func(context.Context, string) error { return cause },
+		OnDelete: func(context.Context, string) error { return cause },
 	}
 }
 

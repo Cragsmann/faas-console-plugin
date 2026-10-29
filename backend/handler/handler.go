@@ -12,11 +12,11 @@ import (
 )
 
 type Handlers struct {
-	caCert               []byte               // cluster CA certificate, read once at startup
-	kubeHost             string               // API server URL for dev/test; empty uses in-cluster config
-	externalAPIServerURL string               // external URL embedded in generated kubeconfigs
-	saTokenExpiry        int64                // requested SA token lifetime in seconds
-	scmCredentials       credentials.Provider // SCM credentials, resolved from the console's bearer token
+	caCert               []byte // cluster CA certificate, read once at startup
+	kubeHost             string // API server URL for dev/test; empty uses in-cluster config
+	externalAPIServerURL string // external URL embedded in generated kubeconfigs
+	saTokenExpiry        int64  // requested SA token lifetime in seconds
+	scmCredentials       credentials.Provider
 }
 
 type httpError struct {

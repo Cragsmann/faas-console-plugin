@@ -69,7 +69,7 @@ var _ = Describe("WorkflowRunWatch", func() {
 		DescribeTable("reports credential lookup failures as SSE events",
 			func(cause error, code int, message string) {
 				provider := credentials.ProviderStub{
-					OnGetCredential: func(context.Context, string) (credentials.Credential, error) {
+					OnGet: func(context.Context, string) (credentials.Credential, error) {
 						return credentials.Credential{}, cause
 					},
 				}

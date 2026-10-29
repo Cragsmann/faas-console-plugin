@@ -113,7 +113,7 @@ func handleWorkflowRunWatch(w http.ResponseWriter, r *http.Request, wc watchConf
 		ew.writeHTTPError(http.StatusUnauthorized, "authentication required")
 		return
 	}
-	credential, err := wc.credProvider.GetCredential(r.Context(), ocpToken)
+	credential, err := wc.credProvider.Get(r.Context(), ocpToken)
 	if err != nil {
 		if errors.Is(err, identity.ErrUnauthenticated) || errors.Is(err, credentials.ErrNoCredential) {
 			ew.writeHTTPError(http.StatusUnauthorized, "authentication required")
@@ -180,13 +180,13 @@ type watchConfig struct {
 }
 
 type CredentialProvider interface {
-	// GetCredential returns the SCM credential for the given OpenShift token.
-	GetCredential(ctx context.Context, ocpToken string) (credentials.Credential, error)
+	// Get returns the SCM credential for the given OpenShift token.
+	Get(ctx context.Context, ocpToken string) (credentials.Credential, error)
 }
 
 type emptyCredProv struct{}
 
-func (e emptyCredProv) GetCredential(ctx context.Context, ocpToken string) (credentials.Credential, error) {
+func (e emptyCredProv) Get(ctx context.Context, ocpToken string) (credentials.Credential, error) {
 	return credentials.Credential{}, credentials.ErrNoCredential
 }
 

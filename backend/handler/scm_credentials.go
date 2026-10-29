@@ -53,7 +53,7 @@ func (h *Handlers) HandleSaveSCMCredential(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = h.scmCredentials.SaveCredential(r.Context(), ocpToken, credentials.Credential{
+	err = h.scmCredentials.Save(r.Context(), ocpToken, credentials.Credential{
 		Owner:     user.Login,
 		AvatarURL: user.AvatarURL,
 		Token:     req.PAT,
@@ -78,7 +78,7 @@ func (h *Handlers) HandleGetSCMCredential(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	credential, err := h.scmCredentials.GetCredential(r.Context(), ocpToken)
+	credential, err := h.scmCredentials.Get(r.Context(), ocpToken)
 	if errors.Is(err, credentials.ErrNoCredential) {
 		writeError(w, http.StatusNotFound, "no stored credential")
 		return
@@ -105,7 +105,7 @@ func (h *Handlers) HandleDeleteSCMCredential(w http.ResponseWriter, r *http.Requ
 
 	// Nothing to revoke if the caller cannot be identified. The browser
 	// disconnects regardless, so this is not worth failing the request over.
-	if err := h.scmCredentials.DeleteCredential(r.Context(), ocpToken); err != nil {
+	if err := h.scmCredentials.Delete(r.Context(), ocpToken); err != nil {
 		slog.Error("failed to delete the stored credential", "err", err)
 	}
 
