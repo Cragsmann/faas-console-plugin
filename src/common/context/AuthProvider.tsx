@@ -1,5 +1,6 @@
 import { Alert, Bullseye, Spinner } from '@patternfly/react-core';
 import { createContext, ReactNode, useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { disconnectGithubUser, fetchGithubUser } from '../clients/authClient';
 import { AUTH_EXPIRED_EVENT, AuthUser } from '../types';
 
@@ -20,6 +21,7 @@ export const AuthContext = createContext<AuthState>({
 });
 
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const navigate = useNavigate();
   // undefined until the backend answers, null once it says it holds nothing
   const [authUser, setAuthUser] = useState<AuthUser | null | undefined>(undefined);
   const [showExpiredAlert, setShowExpiredAlert] = useState(false);
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const onLogout = async () => {
     await disconnectGithubUser();
     setAuthUser(null);
+    navigate('/faas');
   };
 
   useEffect(() => {

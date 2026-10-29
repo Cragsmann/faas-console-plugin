@@ -1,8 +1,14 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useContext } from 'react';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { AuthContext, AuthProvider } from './AuthProvider';
 import { AUTH_EXPIRED_EVENT } from '../types';
-import { fetchGithubUserStub, noGithubUserStub } from '../testing/authClientStub';
+import {
+  disconnectGithubUserStub,
+  fetchGithubUserStub,
+  noGithubUserStub,
+} from '../testing/authClientStub';
 
 const sdkTestDoubles = await vi.hoisted(async () => import('../testing/sdkTestDoubles'));
 
@@ -20,11 +26,19 @@ function ConnectionState() {
   return <div>{isAuthenticated ? `connected as ${user.name}` : 'not connected'}</div>;
 }
 
+function LogoutButton() {
+  const { onLogout } = useContext(AuthContext);
+  return <button onClick={() => void onLogout()}>Log out</button>;
+}
+
+// AuthProvider navigates on logout, so it needs a router above it.
 function renderProvider() {
   render(
-    <AuthProvider>
-      <ConnectionState />
-    </AuthProvider>,
+    <MemoryRouter>
+      <AuthProvider>
+        <ConnectionState />
+      </AuthProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -59,13 +73,15 @@ describe('AuthProvider', () => {
 
   // Children must not mount before the answer arrives, or they would act on
   // "not connected" when the backend is about to say otherwise.
-  it('holds its children back until the backend answers', () => {
+  it('holds its children back until the backend answers', async () => {
     fetchGithubUserStub();
 
     renderProvider();
 
     expect(screen.queryByText('not connected')).not.toBeInTheDocument();
     expect(screen.queryByText(/connected as/)).not.toBeInTheDocument();
+
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
   });
 
   it('disconnects when a request reports the credential is gone', async () => {
@@ -74,8 +90,39 @@ describe('AuthProvider', () => {
     renderProvider();
     expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
 
-    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    act(() => {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    });
 
     await waitFor(() => expect(screen.getByText('not connected')).toBeInTheDocument());
+  });
+
+  it('navigates to the functions list after logout', async () => {
+    fetchGithubUserStub();
+    disconnectGithubUserStub();
+
+    render(
+      <MemoryRouter initialEntries={['/faas/edit/my-func']}>
+        <Routes>
+          <Route
+            path="/faas/edit/:name"
+            element={
+              <AuthProvider>
+                <ConnectionState />
+                <LogoutButton />
+              </AuthProvider>
+            }
+          />
+          <Route path="/faas" element={<div>Functions list</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('connected as twoGiants')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+
+    expect(await screen.findByText('Functions list')).toBeInTheDocument();
+    expect(screen.queryByText('connected as twoGiants')).not.toBeInTheDocument();
   });
 });

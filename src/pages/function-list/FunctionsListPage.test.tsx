@@ -60,8 +60,8 @@ describe('FunctionsListPage', () => {
   });
 
   afterEach(() => {
-    server.resetHandlers();
     act(() => sdkTestDoubles.reset());
+    server.resetHandlers();
   });
 
   // End to end through the real AuthProvider: a stored credential means the

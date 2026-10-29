@@ -74,6 +74,10 @@ describe('FunctionEditPage', () => {
     fetchGithubUserStub();
   });
 
+  afterEach(() => {
+    act(() => sdkTestDoubles.reset());
+  });
+
   it('shows loading state in tree while fetching files', async () => {
     listFunctionsStub({ responses: [functionMetadata({ runtime: 'node' })] });
     let continueWithRequest = () => {};
@@ -109,6 +113,7 @@ describe('FunctionEditPage', () => {
   });
 
   it('shows empty tree and disabled save when repo not found', async () => {
+    listFunctionsStub({ responses: [functionMetadata({ runtime: 'node' })] });
     renderEditPage('nonexistent');
 
     await waitFor(() => {
@@ -408,6 +413,7 @@ describe('FunctionEditPage', () => {
   });
 
   it('shows empty state placeholder when no file is selected', async () => {
+    listFunctionsStub({ responses: [functionMetadata({ runtime: 'node' })] });
     renderEditPage('nonexistent');
 
     await waitFor(() => {
